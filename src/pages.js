@@ -106,6 +106,10 @@ export function pageHTML(title, desc, path, headExtra) {
     ".nav-links .spacer{width:10px}" +
     /* mobile nav strip: links collapse into a scrollable row under the bar (nothing unreachable) */
     ".mnav{display:none}" +
+    "@media(max-width:720px){.mnav{display:flex;gap:2px;overflow-x:auto;padding:6px 14px;border-top:1px solid var(--line);scrollbar-width:none}" +
+    ".mnav::-webkit-scrollbar{display:none}" +
+    ".mnav a{flex:0 0 auto;text-decoration:none;color:var(--mut);font-size:.85rem;font-weight:500;padding:8px 12px;border-radius:6px;white-space:nowrap}" +
+    ".mnav a.on{color:var(--txt);background:rgba(255,255,255,.07)}}" +
     "@media(max-width:900px){.nav-links a.nl{padding:8px 8px;font-size:.85rem}}" +
     "@media(max-width:720px){.nav-links a.nl{display:none}.nav-links a.nl.keep{display:inline-block;color:#fff}}" +
     /* buttons */
@@ -204,7 +208,7 @@ export function pageHTML(title, desc, path, headExtra) {
     ".fmeta .ends.soon{color:#ffb020;font-weight:700}" +
     ".fmeta .ends.crit{color:#ff8a8a;font-weight:700;animation:lrblink 1.4s infinite}" +
     ".card-body{padding:14px 16px 16px;display:flex;flex-direction:column;gap:8px;flex:1}" +
-    ".card h3{font-size:.98rem;line-height:1.35;font-weight:600}" +
+    ".card h3{font-size:.98rem;line-height:1.35;font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.7em}" +
     ".desc{font-size:.85rem;color:var(--mut)}" +
     ".badges{display:flex;gap:6px;flex-wrap:wrap}" +
     ".badge{font-size:.68rem;font-weight:700;letter-spacing:1px;padding:3px 8px;border-radius:4px;text-transform:uppercase}" +
@@ -230,7 +234,8 @@ export function pageHTML(title, desc, path, headExtra) {
     /* pricing */
     ".plans{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:840px;margin:26px auto 0}" +
     "@media(max-width:700px){.plans{grid-template-columns:1fr}}" +
-    ".plan{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:28px}" +
+    ".plan{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:28px;display:flex;flex-direction:column}" +
+    ".plan-cta{margin-top:auto;padding-top:20px}" +
     ".plan.pro{border-color:rgba(34,255,136,.45)}" +
     ".plan h3{font-size:1.1rem;margin-bottom:4px;display:flex;align-items:center;gap:10px}" +
     ".plan .p{font-family:'Space Grotesk';font-size:2.2rem;font-weight:700;margin:10px 0 2px}" +
@@ -244,7 +249,7 @@ export function pageHTML(title, desc, path, headExtra) {
     ".home-plans{margin:18px auto 8px}" +
     /* homepage question links */
     /* faq */
-    ".faqwrap{max-width:760px;margin-top:22px}" +
+    ".faqwrap{max-width:860px;margin:22px auto 0}" +
     ".home-faq{margin:16px auto 0}" +
     "details{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px 18px;margin-bottom:10px}" +
     "summary{cursor:pointer;font-weight:600;font-size:.95rem}" +
@@ -293,7 +298,8 @@ export function navHTML(active) {
     nl("/", "Home") + nl("/deals", "Deals") + nl("/freebies", "Freebies") + nl("/faq", "FAQ") +
     '<span class="spacer"></span><a class="nl keep" id="nav_login" href="/login">Log in</a>' +
     '<a class="btn small" id="nav_gopro" href="/pricing">Go Pro</a>' +
-    "</div></div></nav>" +
+    "</div></div>" +
+    '<div class="mnav">' + mnl("/", "Home") + mnl("/deals", "Deals") + mnl("/freebies", "Freebies") + mnl("/faq", "FAQ") + "</div></nav>" +
     "<script>(function(){fetch('/api/auth/me').then(function(r){return r.json();}).then(function(d){" +
     "if(d&&d.email){var li=document.getElementById('nav_login');" +
     "if(li)li.outerHTML='<a class=\"nl keep\" id=\"nav_dash\" href=\"/pro\">Dashboard</a>';" +
@@ -401,12 +407,12 @@ export function pricingPageHTML() {
     '<div class="per">For casual browsers</div>' +
     "<ul><li>Live freebies feed</li><li>Steam deals feed</li><li>New drops every 20 min</li>" +
     '<li class="no">Fast loot alerts</li><li class="no">Email digest</li></ul>' +
-    '<a class="btn ghost" href="/freebies">Browse free loot</a></div>' +
+    '<div class="plan-cta"><a class="btn ghost" href="/freebies">Browse free loot</a></div></div>' +
     '<div class="plan pro"><h3>Hunter <span class="badge free">Pro</span></h3>' +
     '<div class="p">$4<small> / month</small></div><div class="per">or <b>$39/yr</b> ($3.25/mo). Two months free.</div>' +
     "<ul><li>Everything in Scout</li><li>Fast Telegram or Discord alerts</li><li>Daily email digest</li>" +
     "<li>Every freebie + every deal matching your alert settings</li><li>Wishlist price watch</li><li>All-time low price alerts</li><li>Pro API access for the deals & freebies feeds</li><li>Support indie radar development</li></ul>" +
-    '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+    '<div class="plan-cta" style="display:flex;gap:10px;flex-wrap:wrap">' +
     '<a class="btn" href="https://checkout.dodopayments.com/buy/pdt_0No6epRAEDlFPuD8vFMT3?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">Monthly: $4/mo</a>' +
     '<a class="btn ghost" href="https://checkout.dodopayments.com/buy/pdt_0No6f9EaIF1CMH6wKBTVl?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">Yearly: $39/yr</a></div>' +
     '<div class="fine">Secure checkout via DodoPayments · cancel anytime</div></div>' +
@@ -622,7 +628,7 @@ export function loginHTML() {
     '<input id="le" class="field" style="min-width:0" type="email" required placeholder="you@example.com" autocomplete="email">' +
     '<button class="btn" type="submit">Send link</button></form>' +
     '<p id="lm" class="sec-sub" style="margin-top:14px;text-align:center;min-height:1.2em"></p>' +
-    '<p class="sec-sub" style="text-align:center;border-top:1px solid var(--line);padding-top:16px;margin-top:4px">New here? Browsing is free forever. <a href="/pricing" style="color:var(--txt);text-decoration:underline;text-decoration-color:rgba(255,255,255,.35)">Pro adds fast alerts</a></p>' +
+    '<p class="sec-sub" style="text-align:center;border-top:1px solid var(--line);padding-top:16px;margin-top:4px">New here? <a href="/pricing" style="color:var(--txt);text-decoration:underline;text-decoration-color:rgba(255,255,255,.35)">See Pro plans</a></p>' +
   "</div></div>" +
   "<script>document.getElementById('lf').addEventListener('submit',async function(e){e.preventDefault();var em=document.getElementById('le').value;var m=document.getElementById('lm');m.textContent='Sending…';try{await fetch('/api/auth/request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:em})});m.textContent='Link sent! Check your inbox and spam folder. One link per 15 minutes, use the latest one.';}catch(_){m.textContent='Something went wrong. Try again.';}});</script>" +
   footHTML();
