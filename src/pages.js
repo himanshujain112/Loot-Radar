@@ -799,19 +799,25 @@ export function apiKeyCard(keys) {
 }
 
 // Connections card shared by the Pro and free dashboard views.
-function connCard(st, tgUrl) {
-  const tgScript = "<script>async function tgUnlink(){if(!confirm('Disconnect Telegram? You can reconnect the same or a different account anytime.'))return;" +
+function connCard(st, tgUrl, unlinked) {
+  const tgScript = "<script>async function tgUnlink(){if(!confirm('Disconnect Telegram? You won\\'t get loot alerts here anymore. You can reconnect the same or a different account anytime.'))return;" +
     "var m=document.getElementById('tg_msg');m.textContent='…';" +
-    "try{var r=await fetch('/api/telegram/unlink',{method:'POST'});if(r.ok)location.reload();else m.textContent='⚠ Could not disconnect';}" +
+    "try{var r=await fetch('/api/telegram/unlink',{method:'POST'});if(r.ok)location.href='/dashboard?unlinked=telegram';else m.textContent='⚠ Could not disconnect';}" +
     "catch(e){m.textContent='⚠ Could not disconnect';}}</script>";
-  const dcScript = "<script>async function dcUnlink(){if(!confirm('Disconnect Discord? You can reconnect anytime.'))return;" +
+  const dcScript = "<script>async function dcUnlink(){if(!confirm('Disconnect Discord? You won\\'t get loot alerts here anymore. You can reconnect anytime.'))return;" +
     "var m=document.getElementById('dc_msg');m.textContent='…';" +
-    "try{var r=await fetch('/api/discord/unlink',{method:'POST'});if(r.ok)location.reload();else m.textContent='⚠ Could not disconnect';}" +
+    "try{var r=await fetch('/api/discord/unlink',{method:'POST'});if(r.ok)location.href='/dashboard?unlinked=discord';else m.textContent='⚠ Could not disconnect';}" +
     "catch(e){m.textContent='⚠ Could not disconnect';}}" +
     "if(new URLSearchParams(location.search).get('dm')==='failed'){var w=document.createElement('p');w.className='sec-sub';w.style.color='#ff8a8a';" +
     "w.innerHTML='Heads up: the bot could not DM you. <a href=\"https://discord.gg/eCB9rx9b8B\" target=\"_blank\" rel=\"noopener\" style=\"color:#ff8a8a\">Join our Discord server</a> and allow DMs from server members, then reconnect.';" +
     "var s=document.getElementById('dc_msg');if(s&&s.parentNode)s.parentNode.insertBefore(w,s);}</script>";
+  const unlinkedNote = unlinked === "telegram"
+    ? '<p class="sec-sub" style="color:#ffb86b">Telegram disconnected. No more loot alerts there until you reconnect.</p>'
+    : unlinked === "discord"
+    ? '<p class="sec-sub" style="color:#ffb86b">Discord disconnected. No more loot alerts there until you reconnect.</p>'
+    : "";
   return '<div class="dash-card"><h3>Connections</h3>' +
+    unlinkedNote +
     '<p class="dash-sub">Where your loot alerts land.</p>' +
     '<div class="conn-row"><div class="lbl"><b>Telegram' + (st.telegram ? ' <span class="badge free">connected</span>' : "") + "</b>" +
     "<span>" + (st.telegram ? "Loot alerts land in your Telegram." : "Connect to get loot alerts.") + "</span></div>" +
@@ -831,7 +837,7 @@ function lockedCard(cardHtml) {
   return '<div class="lockwrap" title="Pro required"><span class="lock-tag">Pro required</span>' + cardHtml + "</div>";
 }
 
-export async function proHTML(env, email, tgUrl) {
+export async function proHTML(env, email, tgUrl, unlinked) {
   const st = await proStatus(env, email);
   let wlItems = [];
   let apiKeys = [];
@@ -855,7 +861,7 @@ export async function proHTML(env, email, tgUrl) {
       '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
       '<a class="btn" href="https://checkout.dodopayments.com/buy/pdt_0No6epRAEDlFPuD8vFMT3?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">$4/mo</a>' +
       '<a class="btn ghost" href="https://checkout.dodopayments.com/buy/pdt_0No6f9EaIF1CMH6wKBTVl?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">$39/yr</a></div></div>' +
-      connCard(st, tgUrl) +
+      connCard(st, tgUrl, unlinked) +
       lockedCard(prefsCard(prefs)) + lockedCard(wishlistCard(wlItems)) + lockedCard(apiKeyCard(apiKeys));
   } else {
     const planLbl = st.plan === "monthly" ? "$4/mo" : st.plan === "yearly" ? "$39/yr" : (st.plan ? esc(st.plan) : "");
@@ -868,7 +874,7 @@ export async function proHTML(env, email, tgUrl) {
       '</div><a class="btn small" href="https://customer.dodopayments.com/login/bus_7luSWgVDKIjPXyCqUmjfn" target="_blank" rel="noopener">Manage billing</a></div>' +
       '<p class="fine" style="margin:10px 0 0;font-size:.8rem;color:var(--mut)">Renewal date, invoices, payment method and cancellation live in the billing portal.</p>' +
       '</div>' +
-      connCard(st, tgUrl) + prefsCard(prefs) + wishlistCard(wlItems) + apiKeyCard(apiKeys);
+      connCard(st, tgUrl, unlinked) + prefsCard(prefs) + wishlistCard(wlItems) + apiKeyCard(apiKeys);
   }
   return navHTML("/dashboard", true) +
     '<div class="wrap"><div class="pagehead" style="text-align:center">' +
