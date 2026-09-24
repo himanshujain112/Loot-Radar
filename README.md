@@ -25,18 +25,6 @@ Frequent alerts are live on Telegram: [@games_loot_bot](https://t.me/games_loot_
 
 I'm open to integrating more platforms, including Discord. If you want alerts somewhere else, open an issue and tell me where.
 
-## Run it yourself
+## For developers
 
-Cloudflare Worker (plain JavaScript ES modules, bundled with esbuild). Data from GamerPower (freebies) and CheapShark (deals). Storage is Cloudflare D1 + KV. Payments are DodoPayments.
-
-```
-src/            12 modules: config, feeds, pages, alerts, auth, payments, emails, notify, cache, util, router, index
-schema.sql      D1 tables
-deploy.py       builds, deploys the worker, then auto-pushes to GitHub
-gh_push.py      pushes the tree to GitHub via the API
-analytics.md    daily traffic log (Microsoft Clarity)
-```
-
-Deploy: `python3 deploy.py` (needs Cloudflare credentials).
-
-All secrets (Resend key, Telegram bot token, Dodo webhook secret) live as Worker environment variables in the Cloudflare dashboard. Nothing secret is in this repo, ever.
+Technical details (stack, deployment, payments, data sources) live in [TECH.md](TECH.md).

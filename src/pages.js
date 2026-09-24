@@ -222,6 +222,8 @@ export function pageHTML(title, desc, path, headExtra) {
     ".price s{color:var(--mut);font-size:.85rem;margin-right:6px}" +
     ".price b{color:#fff;font-size:1.02rem}" +
     ".empty{color:var(--mut);padding:24px;border:1px dashed var(--line);border-radius:8px;text-align:center}" +
+    ".srcattr{text-align:center;color:var(--mut);font-size:.75rem;margin:26px 0 0}" +
+    ".srcattr a{color:var(--mut);text-decoration:none}" +
     ".divider{height:1px;background:var(--line);margin:6px 0}" +
     /* pricing */
     ".plans{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:840px;margin:26px auto 0}" +
@@ -382,7 +384,8 @@ export function freebiesPageHTML(freebies) {
   '<div class="sec-head"><h2>' + freebies.length + ' live now</h2><a class="more" href="/api/docs">API docs →</a></div>' +
   '<div class="grid">' +
     (freebies.length ? freebies.map(freebieCard).join("") : '<p class="empty">No freebies right now. Check back soon.</p>') +
-  "</div></div>" + COUNTDOWN_JS + footHTML();
+  "</div>" +
+  '<p class="srcattr">Freebies data by <a href="https://www.gamerpower.com" target="_blank" rel="noopener">GamerPower</a></p></div>' + COUNTDOWN_JS + footHTML();
 }
 
 export function pricingPageHTML() {
