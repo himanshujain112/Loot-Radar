@@ -612,16 +612,20 @@ export function faqPageHTML() {
 
 export function loginHTML() {
   return navHTML("/login") +
-  '<div class="wrap" style="max-width:520px"><div class="pagehead">' +
-    '<div class="overline">Pro login</div><h1>Check your loot status</h1>' +
-    '<p>Enter the email you used at checkout. We\'ll send a magic login link. No password needed.</p>' +
-  "</div>" +
-  '<form id="lf" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:20px">' +
-  '<input id="le" class="field" type="email" required placeholder="you@example.com">' +
-  '<button class="btn" type="submit">Send link</button></form>' +
-  '<p id="lm" class="sec-sub" style="margin-top:14px"></p>' +
-  "<script>document.getElementById('lf').addEventListener('submit',async function(e){e.preventDefault();var em=document.getElementById('le').value;var m=document.getElementById('lm');m.textContent='Sending…';try{await fetch('/api/auth/request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:em})});m.textContent='Link sent! Check your inbox (and spam folder). One link per 15 minutes. Use the latest email.';}catch(_){m.textContent='Something went wrong. Try again.';}});</script>" +
-  "</div>" + footHTML();
+  '<div class="wrap" style="display:flex;justify-content:center;padding:56px 0">' +
+  '<div class="plan" style="max-width:400px;width:100%;text-align:center">' +
+    '<img src="/logo.svg" width="44" height="44" alt="Loot Radar logo" style="border-radius:10px">' +
+    '<div class="overline" style="margin-top:14px">Log in</div>' +
+    '<h1 style="margin:8px 0 10px;font-size:1.6rem">Check your loot status</h1>' +
+    '<p class="sec-sub" style="text-align:center">Enter your email and we\'ll send a magic link. No password, nothing to remember.</p>' +
+    '<form id="lf" style="display:flex;flex-direction:column;gap:10px;margin-top:20px;text-align:left">' +
+    '<input id="le" class="field" style="min-width:0" type="email" required placeholder="you@example.com" autocomplete="email">' +
+    '<button class="btn" type="submit">Send link</button></form>' +
+    '<p id="lm" class="sec-sub" style="margin-top:14px;text-align:center;min-height:1.2em"></p>' +
+    '<p class="sec-sub" style="text-align:center;border-top:1px solid var(--line);padding-top:16px;margin-top:4px">New here? Browsing is free forever. <a href="/pricing" style="color:var(--txt);text-decoration:underline;text-decoration-color:rgba(255,255,255,.35)">Pro adds fast alerts</a></p>' +
+  "</div></div>" +
+  "<script>document.getElementById('lf').addEventListener('submit',async function(e){e.preventDefault();var em=document.getElementById('le').value;var m=document.getElementById('lm');m.textContent='Sending…';try{await fetch('/api/auth/request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:em})});m.textContent='Link sent! Check your inbox and spam folder. One link per 15 minutes, use the latest one.';}catch(_){m.textContent='Something went wrong. Try again.';}});</script>" +
+  footHTML();
 }
 
 export function thanksHTML(prefill) {
