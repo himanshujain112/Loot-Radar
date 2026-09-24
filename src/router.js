@@ -12,7 +12,7 @@ import { sessionEmail, proStatus, apiKeyAuth, rateOk } from "./auth.js";
 import { verifyDodoWebhook, dodoCustomerEmail } from "./payments.js";
 import { sendEmail, sendTelegram } from "./notify.js";
 import { setPrefs, handleTelegramCommand, pollAndAlert, sendDailyDigest, attachGameLows } from "./alerts.js";
-import { discordAuthorizeUrl, discordExchangeCode, discordOAuthUser, sendDiscordDM } from "./discord.js";
+import { discordAuthorizeUrl, discordExchangeCode, discordOAuthUser, sendDiscordDM, discordInviteUrl, discordBotGuilds, discordGuildChannels, sendDiscordChannel } from "./discord.js";
 import { magicLinkEmail } from "./emails.js";
 import {
   pageHTML, homeHTML, dealsPageHTML, freebiesPageHTML, pricingPageHTML,
@@ -120,6 +120,72 @@ export async function handleFetch(request, env, ctx) {
     try { prefix = String((await request.json()).prefix || "").slice(0, 12); } catch (e) {}
     if (prefix && env && env.DB) {
       try { await env.DB.prepare("UPDATE api_keys SET revoked = 1 WHERE email = ? AND prefix = ?").bind(email, prefix).run(); } catch (e) {}
+    }
+    return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
+  }
+  // ---------- Discord server (guild) alerts ----------
+  // Invite URL for adding the bot to a server (bot scope, send-messages only).
+  if (path === "/api/discord/invite-url") {
+    const email = await sessionEmail(request, env);
+    const st = await proStatus(env, email);
+    if (!email || !st.pro) return new Response("Pro required", { status: 403 });
+    if (!env.DISCORD_BOT_TOKEN) return new Response("Discord is not configured yet", { status: 503 });
+    return new Response(JSON.stringify({ url: discordInviteUrl(env) }), { headers: { "Content-Type": "application/json" } });
+  }
+  // Servers the bot has been added to.
+  if (path === "/api/discord/guilds") {
+    const email = await sessionEmail(request, env);
+    const st = await proStatus(env, email);
+    if (!email || !st.pro) return new Response("Pro required", { status: 403 });
+    const guilds = await discordBotGuilds(env);
+    return new Response(JSON.stringify({ guilds }), { headers: { "Content-Type": "application/json" } });
+  }
+  // Text channels in one of the bot's servers.
+  if (path === "/api/discord/channels") {
+    const email = await sessionEmail(request, env);
+    const st = await proStatus(env, email);
+    if (!email || !st.pro) return new Response("Pro required", { status: 403 });
+    const guildId = url.searchParams.get("guild_id") || "";
+    const guilds = await discordBotGuilds(env);
+    const guild = guilds.find(g => g.id === guildId);
+    if (!guild) return new Response(JSON.stringify({ channels: [] }), { headers: { "Content-Type": "application/json" } });
+    const channels = await discordGuildChannels(env, guildId);
+    return new Response(JSON.stringify({ channels }), { headers: { "Content-Type": "application/json" } });
+  }
+  // Save where the bot should post alerts.
+  if (path === "/api/discord/server" && request.method === "POST") {
+    const email = await sessionEmail(request, env);
+    const st = await proStatus(env, email);
+    if (!email || !st.pro) return new Response("Pro required", { status: 403 });
+    let body = {};
+    try { body = await request.json(); } catch (e) {}
+    const guildId = String(body.guild_id || ""), channelId = String(body.channel_id || "");
+    const guilds = await discordBotGuilds(env);
+    const guild = guilds.find(g => g.id === guildId);
+    const channels = guild ? await discordGuildChannels(env, guildId) : [];
+    const channel = channels.find(c => c.id === channelId);
+    if (!guild || !channel) {
+      return new Response(JSON.stringify({ ok: false, error: "pick a server and channel the bot is in" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    try {
+      await env.DB.prepare("UPDATE customers SET discord_guild_id = ?, discord_guild_name = ?, discord_channel_id = ?, discord_channel_name = ?, updated_at = ? WHERE email = ?")
+        .bind(guild.id, guild.name, channel.id, channel.name, new Date().toISOString(), email).run();
+      memDel("pro:" + email);
+    } catch (e) {
+      return new Response(JSON.stringify({ ok: false }), { status: 500, headers: { "Content-Type": "application/json" } });
+    }
+    // Confirm in the channel so the user sees it worked.
+    try { await sendDiscordChannel(env, channel.id, "🎮 Loot Radar connected! Fast loot alerts will land here, usually within 20 minutes of a drop."); } catch (e) {}
+    return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
+  }
+  if (path === "/api/discord/server/disconnect" && request.method === "POST") {
+    const email = await sessionEmail(request, env);
+    if (!email) return new Response(JSON.stringify({ ok: false, error: "login required" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    if (env && env.DB) {
+      try {
+        await env.DB.prepare("UPDATE customers SET discord_guild_id = NULL, discord_guild_name = NULL, discord_channel_id = NULL, discord_channel_name = NULL, updated_at = ? WHERE email = ?").bind(new Date().toISOString(), email).run();
+        memDel("pro:" + email);
+      } catch (e) {}
     }
     return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
   }
@@ -366,17 +432,17 @@ export async function handleFetch(request, env, ctx) {
       await env.KV.put("tglink:" + t, JSON.stringify({ email: email }), { expirationTtl: 900 });
       tgUrl = "https://t.me/games_loot_bot?start=" + t;
     }
-    return finalize(pageHTML("Pro dashboard: Loot Radar", "Manage your Loot Radar Pro alerts and Telegram connection.", "/pro") +
+    return finalize(pageHTML("Pro dashboard: Loot Radar", "Manage your Loot Radar Pro alerts and Telegram/Discord connections.", "/pro") +
       await proHTML(env, email, tgUrl) + "</body></html>");
   }
   if (path === "/pricing") {
     return cachedPage(request, ctx, async () =>
-      finalize(pageHTML("Pro pricing: Loot Radar", "Loot Radar Pro: fast Telegram alerts and a daily email digest for free games and deals that match your alert settings. $4/month or $39/year.", "/pricing") +
+      finalize(pageHTML("Pro pricing: Loot Radar", "Loot Radar Pro: fast Telegram or Discord alerts and a daily email digest for free games and deals that match your alert settings. $4/month or $39/year.", "/pricing") +
         pricingPageHTML() + "</body></html>"));
   }
   if (path === "/faq") {
     return cachedPage(request, ctx, async () =>
-      finalize(pageHTML("FAQ: Loot Radar", "How Loot Radar works: Pro alerts, Telegram setup, the API, cancelling, refunds.", "/faq") +
+      finalize(pageHTML("FAQ: Loot Radar", "How Loot Radar works: Pro alerts, Telegram and Discord setup, the API, cancelling, refunds.", "/faq") +
         faqPageHTML() + "</body></html>"));
   }
   if (path === "/about") {

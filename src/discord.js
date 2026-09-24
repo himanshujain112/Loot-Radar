@@ -58,8 +58,8 @@ function botHeaders(env) {
   return { "Authorization": "Bot " + env.DISCORD_BOT_TOKEN, "Content-Type": "application/json" };
 }
 
-// Open (or reuse) a DM channel with the user. Works without a shared server;
-// delivery depends on the recipient's DM privacy settings.
+// Open (or reuse) a DM channel with the user. Only works when the bot shares
+// a server with the user; otherwise Discord refuses the channel create.
 export async function discordOpenDM(env, discordUserId) {
   if (!env || !env.DISCORD_BOT_TOKEN || !discordUserId) return null;
   const uid = String(discordUserId);
@@ -96,7 +96,55 @@ export async function sendDiscordDM(env, discordUserId, text) {
   } catch (e) { return false; }
 }
 
-// Plain-text Discord-flavored version of the Telegram alert digest.
+// Server (guild) alerts: invite the bot to a server, then post alerts to a
+// channel there. This is the reliable path: a bot cannot open DMs with a user
+// it shares no server with, so DMs only work once the bot is in a server
+// the user is in. Channel posts work as soon as the invite lands.
+export function discordInviteUrl(env) {
+  const q = new URLSearchParams({
+    client_id: discordClientId(env),
+    // Send Messages (2048) + Embed Links (16384). Nothing else needed.
+    permissions: "18432",
+    scope: "bot",
+  });
+  return "https://discord.com/oauth2/authorize?" + q.toString();
+}
+
+// Guilds the bot has been added to.
+export async function discordBotGuilds(env) {
+  if (!env || !env.DISCORD_BOT_TOKEN) return [];
+  try {
+    const res = await fetch(API + "/users/@me/guilds", { headers: botHeaders(env) });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (Array.isArray(data) ? data : []).map(g => ({ id: String(g.id), name: g.name || "server" }));
+  } catch (e) { return []; }
+}
+
+// Text channels in a guild the bot can see.
+export async function discordGuildChannels(env, guildId) {
+  if (!env || !env.DISCORD_BOT_TOKEN || !guildId) return [];
+  try {
+    const res = await fetch(API + "/guilds/" + encodeURIComponent(String(guildId)) + "/channels", { headers: botHeaders(env) });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (Array.isArray(data) ? data : [])
+      .filter(c => c && (c.type === 0 || c.type === 5))
+      .map(c => ({ id: String(c.id), name: c.name || "channel" }));
+  } catch (e) { return []; }
+}
+
+export async function sendDiscordChannel(env, channelId, text) {
+  if (!env || !env.DISCORD_BOT_TOKEN || !channelId) return false;
+  try {
+    const res = await fetch(API + "/channels/" + encodeURIComponent(String(channelId)) + "/messages", {
+      method: "POST",
+      headers: botHeaders(env),
+      body: JSON.stringify({ content: String(text).slice(0, 1900) }),
+    });
+    return res.ok;
+  } catch (e) { return false; }
+}
 export function alertDigestDiscord(items) {
   const n = items.length;
   let out = "🎮 **Loot Radar: " + n + " new drop" + (n === 1 ? "" : "s") + "**";

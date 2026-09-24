@@ -11,7 +11,7 @@ import { cleanTitle, esc } from "./util.js";
 import { memGet, memPut } from "./cache.js";
 import { storeUrl } from "./feeds.js";
 import { sendTelegram, sendEmail } from "./notify.js";
-import { sendDiscordDM, alertDigestDiscord } from "./discord.js";
+import { sendDiscordDM, sendDiscordChannel, alertDigestDiscord } from "./discord.js";
 import { dailyDigestEmail } from "./emails.js";
 
 // Store names for alert payloads, with hardcoded fallbacks for the three alert stores.
@@ -351,14 +351,14 @@ export async function pollAndAlert(env) {
   try { await env.DB.prepare("DELETE FROM sent_alerts WHERE sent_at < datetime('now','-180 days')").run(); } catch (e) {}
   let users = [];
   try {
-    const q = await env.DB.prepare("SELECT email, telegram_chat_id, discord_user_id, alert_freebies, alert_deals, deal_stores, min_discount, deals_mode FROM customers WHERE pro = 1").all();
+    const q = await env.DB.prepare("SELECT email, telegram_chat_id, discord_user_id, discord_channel_id, alert_freebies, alert_deals, deal_stores, min_discount, deals_mode FROM customers WHERE pro = 1").all();
     users = (q && q.results) || [];
   } catch (e) { return; }
   // Fetch deals only for the stores somebody actually wants, one upstream
   // request per store, shared across all users.
   const wanted = {};
   for (const u of users) {
-    if (!u.telegram_chat_id && !u.discord_user_id) continue;
+    if (!u.telegram_chat_id && !u.discord_user_id && !u.discord_channel_id) continue;
     const p = normPrefs(u);
     if (p.alert_deals) for (const s of p.deal_stores) wanted[s] = 1;
   }
@@ -410,6 +410,19 @@ export async function pollAndAlert(env) {
       if (freshDc.length) {
         const ok = await sendDiscordDM(env, dcId, alertDigestDiscord(freshDc));
         if (!ok) for (const it of freshDc) await releaseClaim(env, dcKey, it);
+      }
+    }
+    const dcChannel = u.discord_channel_id ? String(u.discord_channel_id) : null;
+    if (dcChannel && env.DISCORD_BOT_TOKEN) {
+      const chKey = "dcch:" + dcChannel;
+      const freshCh = [];
+      for (const it of items) {
+        if (freshCh.length >= 8) break;
+        if (await claimItem(env, chKey, it)) freshCh.push(it);
+      }
+      if (freshCh.length) {
+        const ok = await sendDiscordChannel(env, dcChannel, alertDigestDiscord(freshCh));
+        if (!ok) for (const it of freshCh) await releaseClaim(env, chKey, it);
       }
     }
   }

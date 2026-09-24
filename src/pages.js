@@ -356,7 +356,7 @@ export function homeHTML(freebies, deals) {
     '<div style="margin-top:18px"><a class="btn ghost" href="/freebies">Browse free loot</a></div></div>' +
     '<div class="plan pro"><h3>Hunter <span class="badge free">Pro</span></h3>' +
     '<div class="p">$4<small> / month</small></div><div class="per">or <b>$39/year</b> · cancel anytime</div>' +
-    '<div class="per" style="margin-top:10px">Fast Telegram alerts (usually within 20 minutes), one morning email digest, wishlist price watch, and API access.</div>' +
+    '<div class="per" style="margin-top:10px">Fast Telegram or Discord alerts (usually within 20 minutes), one morning email digest, wishlist price watch, and API access.</div>' +
     '<div style="margin-top:18px"><a class="btn" href="/pricing">Get Pro alerts</a></div></div>' +
   "</div>" +
 
@@ -421,7 +421,7 @@ export function aboutPageHTML() {
   "<h2>How it works</h2>" +
   "<p>Every 20 minutes the radar sweeps its sources: the GamerPower giveaway feed for free games and deal feeds across 14 PC storefronts for price drops. Everything it finds is shown live and free on this site.</p>" +
   "<h2>What Pro is for</h2>" +
-  "<p>Freebies vanish in hours. Pro members get a fast Telegram message, usually within 20 minutes of a drop, plus one email digest every morning and a wishlist price watch. That's the whole business model: no ads, no data selling.</p>" +
+  "<p>Freebies vanish in hours. Pro members get a fast alert on Telegram or Discord, usually within 20 minutes of a drop, plus one email digest every morning and a wishlist price watch. That's the whole business model: no ads, no data selling.</p>" +
   "<h2>Who runs it</h2>" +
   "<p>Loot Radar is built and run by <strong>Muse</strong>, codemeoww's AI assistant, for <strong>codemeoww</strong>, a solo developer also behind <a href=\"https://ottergames.org\">OtterGames.org</a>, a free browser-games portal. Questions, feedback or a deal tip? Write to <a href=\"mailto:lootradar@codemeoww.com\">lootradar@codemeoww.com</a>. Every email is read by a human.</p>" +
   "</div></div>" + footHTML();
@@ -460,13 +460,14 @@ export function privacyPageHTML() {
   "<ul>" +
   "<li><strong>Email address</strong>: for login (magic links), the daily digest, and tying your Pro subscription to your account.</li>" +
   "<li><strong>Telegram chat ID</strong>: only if you connect Telegram, so alerts can reach you.</li>" +
+  "<li><strong>Discord user ID</strong>: only if you connect Discord, so alerts can reach you.</li>" +
   "<li><strong>Wishlist titles</strong>: the games you add to your price watch.</li>" +
   "<li><strong>Payment details</strong>: handled entirely by DodoPayments; we only store your subscription status, plan and renewal date.</li>" +
   "</ul>" +
   "<h2>What we don't do</h2>" +
   "<p>No ads, and we never sell or rent your data. Pro subscriptions are the entire business model.</p>" +
   "<h2>Analytics</h2>" +
-  "<p>We use Microsoft Clarity to understand how visitors use the site: anonymous heatmaps and session replays that help us fix confusing pages. Clarity sets its own cookies and collects device, browser and interaction data under <a href=\"https://privacy.microsoft.com/en-us/privacystatement\">Microsoft's privacy statement</a>. Your email, wishlist, Telegram details and API keys stay in our database.</p>" +
+  "<p>We use Microsoft Clarity to understand how visitors use the site: anonymous heatmaps and session replays that help us fix confusing pages. Clarity sets its own cookies and collects device, browser and interaction data under <a href=\"https://privacy.microsoft.com/en-us/privacystatement\">Microsoft's privacy statement</a>. Your email, wishlist, Telegram and Discord details and API keys stay in our database.</p>" +
   "<h2>Cookies</h2>" +
   "<p>Our own cookie: <code>lr_sess</code>, your login session (HTTP-only, 30 days). Microsoft Clarity sets its own analytics cookies, as described above.</p>" +
   "<h2>Where data lives</h2>" +
@@ -545,23 +546,25 @@ export function faqData() {
     ["q1", "What is Loot Radar?",
       "Loot Radar is a PC game deals tracker. It tracks discounts across 14 PC storefronts, including Steam, Epic, GOG and IndieGala, plus free-to-claim game giveaways, scanning for new loot every 20 minutes."],
     ["q2", "How does Loot Radar work?",
-      "Every 20 minutes the radar sweeps deal feeds and giveaway listings. Everything it finds is shown live and free on this site. Pro members also get fast Telegram alerts (usually within 20 minutes), plus one email digest every morning."],
+      "Every 20 minutes the radar sweeps deal feeds and giveaway listings. Everything it finds is shown live and free on this site. Pro members also get fast Telegram or Discord alerts (usually within 20 minutes), plus one email digest every morning."],
     ["q3", "Is Loot Radar free?",
-      "Yes. Browsing every deal and freebie on the site is free forever, no account needed. Loot Radar Pro ($4/month or $39/year) pays for fast Telegram alerts (usually within 20 minutes), the morning email digest, wishlist price tracking and API access."],
+      "Yes. Browsing every deal and freebie on the site is free forever, no account needed. Loot Radar Pro ($4/month or $39/year) pays for fast Telegram or Discord alerts (usually within 20 minutes), the morning email digest, wishlist price tracking and API access."],
     ["q4", "What is Loot Radar Pro?",
-      "Pro is the paid tier for loot hunters: fast Telegram alerts for every free-to-claim game and every deal matching your alert settings (your stores, 50-95% off, all deals or wishlist only), one email digest each morning, wishlist price watch, and a Pro API key. $4/month or $39/year, cancel anytime."],
+      "Pro is the paid tier for loot hunters: fast Telegram or Discord alerts for every free-to-claim game and every deal matching your alert settings (your stores, 50-95% off, all deals or wishlist only), one email digest each morning, wishlist price watch, and a Pro API key. $4/month or $39/year, cancel anytime."],
     ["q5", "How do I claim a free PC game?",
       "Open the <a href=\"/freebies\">Freebies</a> page, pick a game and hit Claim. The button takes you straight to the source (Epic, Steam, GOG, IndieGala and more). Most giveaways last hours to days, so Pro alerts help you grab them before they expire."],
     ["q6", "Which stores does Loot Radar track?",
       "Free games come from Steam, Epic Games, GOG, IndieGala, Ubisoft and other storefronts and publishers. Discount alerts cover 14 PC storefronts. You pick the stores and set your own minimum discount from 50% to 95%. The free site feed shows Steam deals."],
     ["q7", "How often are deals and freebies updated?",
       "The radar scans its sources every 20 minutes, and the site updates with each scan. Pro members usually hear about new loot within 20 minutes, well before most freebies expire."],
-    ["q8", "How do the Telegram alerts work?",
-      "Log in with the email you used at checkout, open your <a href=\"/pro\">Pro dashboard</a> and tap <b>Connect Telegram</b>. It takes about ten seconds. When new loot drops you get <b>one message</b> listing everything new (usually within 20 minutes), capped at 8 items per scan so you're never spammed. The same drop is never alerted twice to the same Telegram account. To switch Telegram accounts, hit <b>Disconnect / switch account</b> on the dashboard, or send /unlink in Telegram, then connect the new one."],
+    ["q8", "How do the alerts work?",
+      "Log in with the email you used at checkout, open your <a href=\"/pro\">Pro dashboard</a> and connect Telegram, Discord, or both. Telegram takes about ten seconds with <b>Connect Telegram</b>. For Discord you can get DMs with <b>Connect Discord</b>, or add the bot to your own server and pick a channel for alerts to land in. When new loot drops you get <b>one message</b> listing everything new (usually within 20 minutes), capped at 8 items per scan so you're never spammed. The same drop is never alerted twice to the same account. To switch Telegram accounts, hit <b>Disconnect / switch account</b> on the dashboard, or send /unlink in Telegram, then connect the new one."],
+    ["q8b", "What are all-time low alerts?",
+      "Every deal row on the site is checked against the lowest price that game has ever sold for. Deals sitting at their all-time low get a badge on the site and a 🏆 tag in Pro alerts. If a game on your wishlist hits its all-time low, you get alerted even when the discount is under your usual minimum."],
     ["q13", "Can I choose what alerts I get?",
       "Yes. On the <a href=\"/pro\">Pro dashboard</a> you can switch free-game and discount alerts on or off, pick from all 14 tracked stores (Steam, Epic, GOG and IndieGala are on by default), set a minimum discount from 50% to 95%, or limit discounts to your wishlist games only. The same controls work from Telegram: send /prefs to see your settings, /help for the full command list."],
     ["q9", "How many emails will I get?",
-      "Exactly one per day: the morning digest at 9 AM IST, with wishlist price hits, fresh freebies and the biggest deals. The only other email is a magic login link when you request one. We never send per-drop emails, and there is no newsletter. Prefer Telegram only? Turn the digest off anytime from the Email section of your <a href=\"/pro\">Pro dashboard</a>."],
+      "Exactly one per day: the morning digest at 9 AM IST, with wishlist price hits, fresh freebies and the biggest deals. The only other email is a magic login link when you request one. We never send per-drop emails, and there is no newsletter. Prefer Telegram/Discord only? Turn the digest off anytime from the Email section of your <a href=\"/pro\">Pro dashboard</a>."],
     ["q10", "What can I do with the Loot Radar API?",
       "Pro members get an API key from the <a href=\"/pro\">dashboard</a> for live deals, freebies, game search and store listings as JSON, documented at <a href=\"/api/docs\">/api/docs</a>. Up to 5 keys, 600 requests/hour per key. Use it for bots and personal dashboards."],
     ["q11", "How do I cancel Loot Radar Pro?",
@@ -663,7 +666,7 @@ export function prefsCard(p) {
     '<option value="wishlist"' + (p.deals_mode === "wishlist" ? " selected" : "") + ">my wishlist only</option></select></label></div>" +
     '<div class="pref-d" style="margin-top:10px">My wishlist only: discount alerts fire only for games on your wishlist. All games: any deal matching your stores and min discount.</div>' +
     '<div class="dash-sec">Email</div>' +
-    tg("pf_digest", p.digest_email, "Daily digest email", "One email each morning at 9 AM IST: wishlist price hits, fresh freebies and the biggest deals. Off means alerts stay Telegram-only.") +
+    tg("pf_digest", p.digest_email, "Daily digest email", "One email each morning at 9 AM IST: wishlist price hits, fresh freebies and the biggest deals. Off means alerts stay on Telegram/Discord only.") +
     '<div style="margin-top:18px"><button class="btn small" onclick="prefsSave()">Save preferences</button> <span id="pf_msg" class="sec-sub" style="margin-left:8px"></span></div>' +
     "<script>" +
     "var STORE_LIST=" + storeList + ";" +
@@ -783,7 +786,7 @@ export async function proHTML(env, email, tgUrl) {
         : '<p class="sec-sub" style="text-align:center">Connect Telegram to get fast loot alerts:</p>' +
           (tgUrl ? '<a class="btn" href="' + tgUrl + '" target="_blank" rel="noopener">Connect Telegram</a>' : "")) +
       '<div style="margin-top:14px">' +
-      (st.discord
+      (st.discord && st.discord.dm
         ? '<p><span class="badge free">Discord connected</span></p><p class="sec-sub" style="text-align:center">Loot alerts will land in your Discord DMs.</p>' +
           '<button class="btn small ghost" onclick="dcUnlink()">Disconnect Discord</button> <span id="dc_msg" class="sec-sub"></span>' +
           "<script>async function dcUnlink(){if(!confirm('Disconnect Discord? You can reconnect anytime.'))return;" +
@@ -792,6 +795,37 @@ export async function proHTML(env, email, tgUrl) {
           "catch(e){m.textContent='⚠ Could not disconnect';}}</script>"
         : '<p class="sec-sub" style="text-align:center">Or get alerts in your Discord DMs:</p>' +
           '<a class="btn" href="/api/discord/connect">Connect Discord</a>') +
+      (st.discord && st.discord.channel
+        ? '<p style="margin-top:14px"><span class="badge free">Server alerts on</span></p>' +
+          '<p class="sec-sub" style="text-align:center">Posting to <b>#' + esc(st.discord.channel.channel) + '</b> in ' + esc(st.discord.channel.guild) + '.</p>' +
+          '<button class="btn small ghost" onclick="dcServerUnlink()">Remove server alerts</button> <span id="dcs_msg" class="sec-sub"></span>'
+        : '<p class="sec-sub" style="text-align:center;margin-top:14px">Or post alerts in your own server:</p>' +
+          '<button class="btn" onclick="dcInvite()">Add bot to your server</button>' +
+          '<p class="sec-sub" style="text-align:center">Added it? <a href="#" onclick="dcLoadGuilds(event)">load your servers</a> and pick a channel:</p>' +
+          '<div id="dcs_pick" style="display:none;margin-top:8px">' +
+          '<select id="dcs_guild" onchange="dcLoadChannels()"><option value="">pick a server…</option></select> ' +
+          '<select id="dcs_channel" style="display:none"><option value="">pick a channel…</option></select> ' +
+          '<button class="btn small" id="dcs_save" style="display:none" onclick="dcSaveServer()">Save</button></div>' +
+          '<div><span id="dcs_msg" class="sec-sub"></span></div>') +
+      "<script>" +
+      "async function dcInvite(){try{var r=await fetch('/api/discord/invite-url');var j=await r.json();if(j.url)window.open(j.url,'_blank');}catch(e){}}" +
+      "async function dcLoadGuilds(ev){if(ev)ev.preventDefault();var m=document.getElementById('dcs_msg');m.textContent='loading…';" +
+      "try{var r=await fetch('/api/discord/guilds');var j=await r.json();" +
+      "var s=document.getElementById('dcs_guild');s.innerHTML='<option value=\"\">pick a server…</option>';" +
+      "(j.guilds||[]).forEach(function(g){var o=document.createElement('option');o.value=g.id;o.textContent=g.name;s.appendChild(o);});" +
+      "document.getElementById('dcs_pick').style.display='block';" +
+      "m.textContent=(j.guilds&&j.guilds.length)?'':'bot is not in any server yet, add it first';}catch(e){m.textContent='could not load servers';}}" +
+      "async function dcLoadChannels(){var g=document.getElementById('dcs_guild').value;var cs=document.getElementById('dcs_channel');var sv=document.getElementById('dcs_save');cs.style.display='none';sv.style.display='none';if(!g)return;" +
+      "try{var r=await fetch('/api/discord/channels?guild_id='+encodeURIComponent(g));var j=await r.json();" +
+      "cs.innerHTML='<option value=\"\">pick a channel…</option>';" +
+      "(j.channels||[]).forEach(function(c){var o=document.createElement('option');o.value=c.id;o.textContent='#'+c.name;cs.appendChild(o);});" +
+      "cs.style.display='';cs.onchange=function(){sv.style.display=cs.value?'':'none';};}catch(e){}}" +
+      "async function dcSaveServer(){var g=document.getElementById('dcs_guild').value;var c=document.getElementById('dcs_channel').value;var m=document.getElementById('dcs_msg');if(!g||!c)return;m.textContent='saving…';" +
+      "try{var r=await fetch('/api/discord/server',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({guild_id:g,channel_id:c})});" +
+      "if(r.ok)location.reload();else m.textContent='could not save';}catch(e){m.textContent='could not save';}}" +
+      "async function dcServerUnlink(){if(!confirm('Remove server alerts? Your Discord DM link stays.'))return;var m=document.getElementById('dcs_msg');m.textContent='…';" +
+      "try{var r=await fetch('/api/discord/server/disconnect',{method:'POST'});if(r.ok)location.reload();else m.textContent='could not remove';}catch(e){m.textContent='could not remove';}}" +
+      "</script>" +
       '</div>' +
       "</div>" + prefsCard(prefs) + wishlistCard(wlItems) + apiKeyCard(apiKeys);
   }
