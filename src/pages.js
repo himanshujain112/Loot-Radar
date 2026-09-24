@@ -334,8 +334,7 @@ export function homeHTML(freebies, deals) {
   '<div class="wrap"><header class="hero">' +
     '<div class="overline">Free games · steep discounts</div>' +
     "<h1>Free PC games, before they're gone.</h1>" +
-    '<p class="sub">Right now: <b>' + freebies.length + '</b> games free to claim, <b>' + deals.length + "</b> Steam discounts tracked live. " +
-    "We sweep 14 stores every 20 minutes, so when a game goes free or a price craters, it's here within minutes. Browsing is free forever.</p>" +
+    '<p class="sub">Track free PC games, deep discounts, and limited-time deals across multiple stores, all in one place and updated throughout the day.</p>' +
     '<div class="hero-cta"><a class="btn" href="/freebies">See what\'s free</a>' +
     '<a class="btn ghost" href="/deals">Browse today\'s deals</a></div>' +
     urgLine +
