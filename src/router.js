@@ -376,9 +376,11 @@ export async function handleFetch(request, env, ctx) {
         .bind(String(du.id), new Date().toISOString(), email).run();
       memDel("pro:" + email);
     } catch (e) { return fail(); }
-    // Best-effort welcome DM so the user sees it worked.
-    try { await sendDiscordDM(env, String(du.id), "🎮 Loot Radar connected! You'll get fast loot alerts here, usually within 20 minutes of a drop."); } catch (e) {}
-    return Response.redirect("https://radar.codemeoww.com/pro?discord=ok", 302);
+    // Best-effort welcome DM so the user sees it worked. Flag failure in the
+    // redirect so the dashboard can say why instead of failing silently.
+    let dmOk = false;
+    try { dmOk = await sendDiscordDM(env, String(du.id), "🎮 Loot Radar connected! You'll get fast loot alerts here, usually within 20 minutes of a drop."); } catch (e) {}
+    return Response.redirect("https://radar.codemeoww.com/pro?discord=ok" + (dmOk ? "" : "&dm=failed"), 302);
   }
   if (path === "/api/discord/unlink" && request.method === "POST") {
     const email = await sessionEmail(request, env);

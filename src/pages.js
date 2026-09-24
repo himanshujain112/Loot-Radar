@@ -825,6 +825,9 @@ export async function proHTML(env, email, tgUrl) {
       "if(r.ok)location.reload();else m.textContent='could not save';}catch(e){m.textContent='could not save';}}" +
       "async function dcServerUnlink(){if(!confirm('Remove server alerts? Your Discord DM link stays.'))return;var m=document.getElementById('dcs_msg');m.textContent='…';" +
       "try{var r=await fetch('/api/discord/server/disconnect',{method:'POST'});if(r.ok)location.reload();else m.textContent='could not remove';}catch(e){m.textContent='could not remove';}}" +
+      "if(new URLSearchParams(location.search).get('dm')==='failed'){var w=document.createElement('p');w.className='sec-sub';w.style.color='#ff8a8a';" +
+      "w.textContent='Heads up: the bot could not DM you. Check Discord Settings → Privacy & Safety → allow DMs, or re-paste the bot token in Cloudflare. Server alerts below are unaffected.';" +
+      "var s=document.getElementById('dc_msg');if(s&&s.parentNode)s.parentNode.insertBefore(w,s);}" +
       "</script>" +
       '</div>' +
       "</div>" + prefsCard(prefs) + wishlistCard(wlItems) + apiKeyCard(apiKeys);
