@@ -61,3 +61,13 @@ except urllib.error.HTTPError as e:
     print("HTTP", e.code)
     print(e.read().decode()[:1500])
     sys.exit(1)
+
+# Every deploy also pushes to GitHub (never fails the deploy itself).
+print("--- pushing to GitHub ---")
+import subprocess as _sp
+try:
+    r = _sp.run([sys.executable, "gh_push.py"], cwd="/home/hatch/workspace/loot-radar", timeout=180)
+    if r.returncode != 0:
+        print("GitHub push failed (deploy itself succeeded)")
+except Exception as e:
+    print("GitHub push skipped:", e)
