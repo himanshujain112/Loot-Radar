@@ -31,8 +31,8 @@ export async function getWishlist(env, email) {
   if (hit) return hit;
   let items = [];
   try {
-    const wq = await env.DB.prepare("SELECT title FROM wishlist WHERE email = ? ORDER BY added_at").bind(email).all();
-    items = ((wq && wq.results) || []).map(function (r) { return r.title; });
+    const wq = await env.DB.prepare("SELECT title, thumb FROM wishlist WHERE email = ? ORDER BY added_at").bind(email).all();
+    items = ((wq && wq.results) || []).map(function (r) { return { title: r.title, thumb: r.thumb || null }; });
   } catch (e) {}
   memPut("wl:" + email, items, 120);
   return items;

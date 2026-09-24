@@ -100,8 +100,8 @@ export function dailyDigestEmail(freebies, deals, wishlist) {
   if (freebies.length) inner += sec("&#127918;", "Free to claim", freebies.length, grid(freebies));
   if (deals.length) inner += sec("&#128293;", "Steepest PC discounts", deals.length, grid(deals));
   if (!wishlist.length && !freebies.length && !deals.length) {
-    inner += '<p style="color:#aeb8c4;font-size:14px;line-height:1.6">Quiet day on the radar. No fresh freebies or 70%+ deals right now. Add games to your <a href="https://radar.codemeoww.com/pro" style="color:#6cb4f5">wishlist</a> and we\'ll watch their prices.</p>';
+    inner += '<p style="color:#aeb8c4;font-size:14px;line-height:1.6">Quiet day on the radar. No fresh freebies or 70%+ deals right now. Add games to your <a href="https://radar.codemeoww.com/dashboard" style="color:#6cb4f5">wishlist</a> and we\'ll watch their prices.</p>';
   }
-  inner += '<p style="color:#8b95a3;font-size:12px;line-height:1.6;margin-top:24px">You\'re getting this because you\'re a Loot Radar Pro member. One digest a day, nothing more.<br><a href="https://radar.codemeoww.com/pro" style="color:#6cb4f5">Manage your alerts</a> · <a href="mailto:lootradar@codemeoww.com" style="color:#6cb4f5">lootradar@codemeoww.com</a></p>';
+  inner += '<p style="color:#8b95a3;font-size:12px;line-height:1.6;margin-top:24px">You\'re getting this because you\'re a Loot Radar Pro member. One digest a day, nothing more.<br><a href="https://radar.codemeoww.com/dashboard" style="color:#6cb4f5">Manage your alerts</a> · <a href="mailto:lootradar@codemeoww.com" style="color:#6cb4f5">lootradar@codemeoww.com</a></p>';
   return emailShell(inner);
 }

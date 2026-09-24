@@ -308,7 +308,7 @@ export async function handleFetch(request, env, ctx) {
     return new Response("", {
       status: 302,
       headers: {
-        Location: "https://radar.codemeoww.com/pro",
+        Location: "https://radar.codemeoww.com/dashboard",
         "Set-Cookie": "lr_sess=" + sid + "; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=2592000",
       },
     });
@@ -348,10 +348,10 @@ export async function handleFetch(request, env, ctx) {
   if (path === "/api/wishlist/add" && request.method === "POST") {
     const email = await sessionEmail(request, env);
     if (!email) return new Response(JSON.stringify({ ok: false }), { status: 401, headers: { "Content-Type": "application/json" } });
-    let title = "";
-    try { title = String((await request.json()).title || "").trim().slice(0, 120); } catch (e) {}
+    let title = "", thumb = "";
+    try { const b = await request.json(); title = String(b.title || "").trim().slice(0, 120); thumb = String(b.thumb || "").trim().slice(0, 500); } catch (e) {}
     if (title && env && env.DB) {
-      try { await env.DB.prepare("INSERT OR IGNORE INTO wishlist (email, title, added_at) VALUES (?,?,?)").bind(email, title, new Date().toISOString()).run(); memDel("wl:" + email); } catch (e) {}
+      try { await env.DB.prepare("INSERT INTO wishlist (email, title, thumb, added_at) VALUES (?,?,?,?) ON CONFLICT(email, title) DO UPDATE SET thumb=COALESCE(excluded.thumb, wishlist.thumb)").bind(email, title, thumb || null, new Date().toISOString()).run(); memDel("wl:" + email); } catch (e) {}
     }
     return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
   }
@@ -381,7 +381,7 @@ export async function handleFetch(request, env, ctx) {
     let email = null;
     try { email = state ? await env.KV.get("discord:oauth:" + state) : null; } catch (e) {}
     if (state) { try { await env.KV.delete("discord:oauth:" + state); } catch (e) {} }
-    const fail = () => Response.redirect("https://radar.codemeoww.com/pro?discord=error", 302);
+    const fail = () => Response.redirect("https://radar.codemeoww.com/dashboard?discord=error", 302);
     if (!email || !code) return fail();
     const tok = await discordExchangeCode(env, code);
     const du = tok && tok.access_token ? await discordOAuthUser(tok.access_token) : null;
@@ -395,7 +395,7 @@ export async function handleFetch(request, env, ctx) {
     // redirect so the dashboard can say why instead of failing silently.
     let dmOk = false;
     try { dmOk = await sendDiscordDM(env, String(du.id), "🎮 Loot Radar connected! You'll get fast loot alerts here, usually within 20 minutes of a drop."); } catch (e) {}
-    return Response.redirect("https://radar.codemeoww.com/pro?discord=ok" + (dmOk ? "" : "&dm=failed"), 302);
+    return Response.redirect("https://radar.codemeoww.com/dashboard?discord=ok" + (dmOk ? "" : "&dm=failed"), 302);
   }
   if (path === "/api/discord/unlink" && request.method === "POST") {
     const email = await sessionEmail(request, env);
@@ -441,6 +441,10 @@ export async function handleFetch(request, env, ctx) {
       thanksHTML(em) + "</body></html>");
   }
   if (path === "/pro") {
+    const q = url.search || "";
+    return Response.redirect("https://radar.codemeoww.com/dashboard" + q, 302);
+  }
+  if (path === "/dashboard") {
     const email = await sessionEmail(request, env);
     if (!email) return Response.redirect("https://radar.codemeoww.com/login", 302);
     let tgUrl = null;
@@ -449,7 +453,7 @@ export async function handleFetch(request, env, ctx) {
       await env.KV.put("tglink:" + t, JSON.stringify({ email: email }), { expirationTtl: 900 });
       tgUrl = "https://t.me/games_loot_bot?start=" + t;
     }
-    return finalize(pageHTML("Pro dashboard: Loot Radar", "Manage your Loot Radar Pro alerts and Telegram/Discord connections.", "/pro") +
+    return finalize(pageHTML("Dashboard: Loot Radar", "Manage your Loot Radar alerts and Telegram/Discord connections.", "/dashboard") +
       await proHTML(env, email, tgUrl) + "</body></html>");
   }
   if (path === "/pricing") {
@@ -512,7 +516,7 @@ export async function handleFetch(request, env, ctx) {
         await env.DB.prepare("UPDATE customers SET telegram_chat_id = ?, updated_at = ? WHERE email = ?")
           .bind(String(chatId), nowIso, rec.email).run();
         ctx.waitUntil(sendTelegram(env, chatId,
-          "🎮 <b>Loot Radar connected!</b>\n\nYou'll get fast alerts here, usually within 20 minutes of a drop, one message per scan.\n\nTune what you get with /prefs, or anytime at radar.codemeoww.com/pro\n\nHappy hunting!"));
+          "🎮 <b>Loot Radar connected!</b>\n\nYou'll get fast alerts here, usually within 20 minutes of a drop, one message per scan.\n\nTune what you get with /prefs, or anytime at radar.codemeoww.com/dashboard\n\nHappy hunting!"));
       }
     } else if (text === "/start" && chatId) {
       ctx.waitUntil(sendTelegram(env, chatId,

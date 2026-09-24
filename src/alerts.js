@@ -184,7 +184,7 @@ export function prefsSummary(p) {
     "Stores: <b>" + stores + "</b>\n" +
     "Min. discount: <b>" + p.min_discount + "%</b>\n" +
     "Discount mode: <b>" + (p.deals_mode === "wishlist" ? "wishlist only" : "all deals") + "</b>\n\n" +
-    "Change them with /help, or anytime at radar.codemeoww.com/pro";
+    "Change them with /help, or anytime at radar.codemeoww.com/dashboard";
 }
 
 // ---------- Single-message alert digest ----------
@@ -485,7 +485,7 @@ export async function handleTelegramCommand(env, chatId, text) {
         await env.DB.prepare("UPDATE customers SET telegram_chat_id = NULL, updated_at = ? WHERE email = ?")
           .bind(new Date().toISOString(), cust.email).run();
       } catch (e) { return "⚠️ couldn't disconnect, try again"; }
-      return "📴 Telegram disconnected. Link a different account anytime from radar.codemeoww.com/pro";
+      return "📴 Telegram disconnected. Link a different account anytime from radar.codemeoww.com/dashboard";
     case "/minoff":
       if (!args[0]) return "Usage: /minoff 70  (50-95)";
       return save({ min_discount: args[0] });

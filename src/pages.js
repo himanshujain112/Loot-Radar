@@ -150,7 +150,8 @@ export function pageHTML(title, desc, path, headExtra) {
     ".combo-opt .pr{margin-left:auto;color:var(--txt);font-size:.82rem;flex:none}" +
     ".combo-empty{padding:12px;color:var(--mut);font-size:.86rem}" +
     ".wl-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;background:#0d100d}" +
-    ".wl-row .t{font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+    ".wl-row .t{font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}" +
+    ".wl-img{width:92px;height:35px;object-fit:cover;border-radius:5px;flex:none}" +
     ".wl-row button{background:none;border:0;color:var(--mut);font-size:1.2rem;cursor:pointer;line-height:1;flex:none;padding:2px 4px}" +
     ".wl-row button:hover{color:var(--red)}" +
     ".fld{background:#0b0e0c;border:1px solid var(--line);border-radius:8px;color:var(--txt);padding:10px 12px;font-size:.9rem;font-family:inherit}" +
@@ -309,7 +310,7 @@ export function navHTML(active) {
     '<div class="mnav">' + mnl("/", "Home") + mnl("/deals", "Deals") + mnl("/freebies", "Freebies") + mnl("/faq", "FAQ") + "</div></nav>" +
     "<script>(function(){fetch('/api/auth/me').then(function(r){return r.json();}).then(function(d){" +
     "if(d&&d.email){var li=document.getElementById('nav_login');" +
-    "if(li)li.outerHTML='<a class=\"nl keep\" id=\"nav_dash\" href=\"/pro\">Dashboard</a>';" +
+    "if(li)li.outerHTML='<a class=\"nl keep\" id=\"nav_dash\" href=\"/dashboard\">Dashboard</a>';" +
     "var gp=document.getElementById('nav_gopro');if(gp)gp.remove();}" +
     "}).catch(function(){});})();</script>";
 }
@@ -339,7 +340,6 @@ export function homeHTML(freebies, deals) {
     : '<p class="hero-urgency"><span data-sweep>next sweep soon</span> · new drops land every 20 minutes</p>';
   return navHTML("/") +
   '<div class="wrap"><header class="hero">' +
-    '<div class="overline">Free games · steep discounts</div>' +
     "<h1>PC game deals and freebies in one place.</h1>" +
     '<p class="sub">Track free PC games, deep discounts, and limited time deals across multiple stores including steam, epic games, GOG and more, all in one place, updated every 20 min!</p>' +
     '<div class="hero-cta"><a class="btn" href="/freebies">See what\'s free</a>' +
@@ -511,7 +511,7 @@ export function apiDocsPageHTML() {
   return navHTML("/api/docs") +
   '<div class="wrap"><div class="pagehead">' +
     '<div class="overline">Developers</div><h1>Loot Radar API</h1>' +
-    "<p>The same live feeds that power this site, free-to-claim PC games and 70%+ Steam deals, as JSON. <strong>Pro members only.</strong> Get your key on the <a href=\"/pro\" style=\"color:var(--txt);text-decoration:underline;text-decoration-color:rgba(255,255,255,.35)\">Pro dashboard</a>.</p>" +
+    "<p>The same live feeds that power this site, free-to-claim PC games and 70%+ Steam deals, as JSON. <strong>Pro members only.</strong> Get your key on the <a href=\"/dashboard\" style=\"color:var(--txt);text-decoration:underline;text-decoration-color:rgba(255,255,255,.35)\">dashboard</a>.</p>" +
   '</div><div class="legal">' +
   "<h2>Authentication</h2>" +
   "<p>Pass your key in the <code>X-API-Key</code> header, or as <code>?key=</code>. Keys start with <code>lr_</code>. Keep them secret. One account per person, don't publish your key.</p>" +
@@ -542,7 +542,7 @@ export function apiDocsPageHTML() {
   "<h2>Errors</h2>" +
   "<p><code>400</code>: bad parameter (e.g. <code>maxAge</code> out of range, or no <code>title</code>/<code>steamAppID</code>/<code>ids</code> on /api/games). <code>401</code>: missing, invalid, revoked key, or the key's owner isn't Pro anymore. <code>404</code>: unknown deal ID. <code>429</code>: rate limit. <code>502</code>: upstream feed hiccup, retry shortly. Every 401 body links back here.</p>" +
   "<h2>Keys</h2>" +
-  "<p>Create up to 5 keys and revoke old ones from the <a href=\"/pro\">Pro dashboard</a>. Lost your key? Revoke it and make a new one. Old keys stop working immediately.</p>" +
+  "<p>Create up to 5 keys and revoke old ones from the <a href=\"/dashboard\">dashboard</a>. Lost your key? Revoke it and make a new one. Old keys stop working immediately.</p>" +
   "</div></div>" + footHTML();
 }
 
@@ -571,15 +571,15 @@ export function faqData() {
     ["q7", "How often are deals and freebies updated?",
       "The radar scans its sources every 20 minutes, and the site updates with each scan. Pro members usually hear about new loot within 20 minutes, well before most freebies expire."],
     ["q8", "How do the alerts work?",
-      "Log in with the email you used at checkout, open your <a href=\"/pro\">Pro dashboard</a> and connect Telegram, Discord, or both. Telegram takes about ten seconds with <b>Connect Telegram</b>. For Discord you can get DMs with <b>Connect Discord</b>, or add the bot to your own server and pick a channel for alerts to land in. When new loot drops you get <b>one message</b> listing everything new (usually within 20 minutes), capped at 8 items per scan so you're never spammed. The same drop is never alerted twice to the same account. To switch Telegram accounts, hit <b>Disconnect / switch account</b> on the dashboard, or send /unlink in Telegram, then connect the new one."],
+      "Log in with the email you used at checkout, open your <a href=\"/dashboard\">dashboard</a> and connect Telegram, Discord, or both. Telegram takes about ten seconds with <b>Connect Telegram</b>. For Discord you can get DMs with <b>Connect Discord</b>, or add the bot to your own server and pick a channel for alerts to land in. When new loot drops you get <b>one message</b> listing everything new (usually within 20 minutes), capped at 8 items per scan so you're never spammed. The same drop is never alerted twice to the same account. To switch Telegram accounts, hit <b>Disconnect / switch account</b> on the dashboard, or send /unlink in Telegram, then connect the new one."],
     ["q8b", "What are all-time low alerts?",
       "Every deal row on the site is checked against the lowest price that game has ever sold for. Deals sitting at their all-time low get a badge on the site and a 🏆 tag in Pro alerts. If a game on your wishlist hits its all-time low, you get alerted even when the discount is under your usual minimum."],
     ["q13", "Can I choose what alerts I get?",
-      "Yes. On the <a href=\"/pro\">Pro dashboard</a> you can switch free-game and discount alerts on or off, pick from all 14 tracked stores (Steam, Epic, GOG and IndieGala are on by default), set a minimum discount from 50% to 95%, or limit discounts to your wishlist games only. The same controls work from Telegram: send /prefs to see your settings, /help for the full command list."],
+      "Yes. On the <a href=\"/dashboard\">dashboard</a> you can switch free-game and discount alerts on or off, pick from all 14 tracked stores (Steam, Epic, GOG and IndieGala are on by default), set a minimum discount from 50% to 95%, or limit discounts to your wishlist games only. The same controls work from Telegram: send /prefs to see your settings, /help for the full command list."],
     ["q9", "How many emails will I get?",
-      "Exactly one per day: the morning digest at 9 AM IST, with wishlist price hits, fresh freebies and the biggest deals. The only other email is a magic login link when you request one. We never send per-drop emails, and there is no newsletter. Prefer Telegram/Discord only? Turn the digest off anytime from the Email section of your <a href=\"/pro\">Pro dashboard</a>."],
+      "Exactly one per day: the morning digest at 9 AM IST, with wishlist price hits, fresh freebies and the biggest deals. The only other email is a magic login link when you request one. We never send per-drop emails, and there is no newsletter. Prefer Telegram/Discord only? Turn the digest off anytime from the Email section of your <a href=\"/dashboard\">dashboard</a>."],
     ["q10", "What can I do with the Loot Radar API?",
-      "Pro members get an API key from the <a href=\"/pro\">dashboard</a> for live deals, freebies, game search and store listings as JSON, documented at <a href=\"/api/docs\">/api/docs</a>. Up to 5 keys, 600 requests/hour per key. Use it for bots and personal dashboards."],
+      "Pro members get an API key from the <a href=\"/dashboard\">dashboard</a> for live deals, freebies, game search and store listings as JSON, documented at <a href=\"/api/docs\">/api/docs</a>. Up to 5 keys, 600 requests/hour per key. Use it for bots and personal dashboards."],
     ["q11", "How do I cancel Loot Radar Pro?",
       "Cancel anytime from the billing link in your DodoPayments receipt email. Pro stays active until the end of the paid period."],
     ["q12", "Do you offer refunds?",
@@ -708,8 +708,10 @@ export function prefsCard(p) {
 }
 
 export function wishlistCard(items) {
-  const rows = items.map(function (t) {
-    return '<div class="wl-row"><span class="t">' + esc(t) + "</span>" +
+  const rows = items.map(function (g) {
+    const t = g.title, th = g.thumb;
+    return '<div class="wl-row">' + (th ? '<img class="wl-img" src="' + esc(th) + '" alt="" loading="lazy">' : "") +
+      '<span class="t">' + esc(t) + "</span>" +
       '<button onclick="wlDel(this)" data-t="' + esc(t) + '" title="Remove">&times;</button></div>';
   }).join("");
   return '<div class="dash-card">' +
@@ -721,19 +723,19 @@ export function wishlistCard(items) {
     "<script>" +
     "var wlT=document.getElementById('wlt'),wlDrop=document.getElementById('wl_drop'),wlTimer=null;" +
     "function wlEsc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\x22/g,'&quot;');}" +
-    "function wlAddTitle(t){t=(t||'').trim().slice(0,120);if(!t)return;wlDrop.classList.remove('open');" +
-    "fetch('/api/wishlist/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:t})}).then(function(){location.reload();});}" +
+    "function wlAddTitle(t,th){t=(t||'').trim().slice(0,120);if(!t)return;wlDrop.classList.remove('open');" +
+    "fetch('/api/wishlist/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:t,thumb:(th||'').slice(0,500)})}).then(function(){location.reload();});}" +
     "wlT.addEventListener('input',function(){clearTimeout(wlTimer);var q=wlT.value.trim();" +
     "if(q.length<2){wlDrop.classList.remove('open');return;}" +
     "wlTimer=setTimeout(function(){" +
     "fetch('/api/pro/search?q='+encodeURIComponent(q)).then(function(r){return r.json();}).then(function(d){" +
     "var items=(d&&d.items)||[];var h='';" +
     "for(var i=0;i<items.length;i++){var g=items[i];" +
-    "h+='<button type=\x22button\x22 class=\x22combo-opt\x22 data-t=\x22'+wlEsc(g.title)+'\x22>'+(g.thumb?'<img src=\x22'+wlEsc(g.thumb)+'\x22 alt=\x22\x22 loading=\x22lazy\x22>':'')+'<span>'+wlEsc(g.title)+'</span>'+(g.cheapest&&g.cheapest!=='0'?'<span class=\x22pr\x22>from $'+wlEsc(g.cheapest)+'</span>':'')+'</button>';}" +
+    "h+='<button type=\x22button\x22 class=\x22combo-opt\x22 data-t=\x22'+wlEsc(g.title)+'\x22 data-th=\x22'+wlEsc(g.thumb||'')+'\x22>'+(g.thumb?'<img src=\x22'+wlEsc(g.thumb)+'\x22 alt=\x22\x22 loading=\x22lazy\x22>':'')+'<span>'+wlEsc(g.title)+'</span>'+(g.cheapest&&g.cheapest!=='0'?'<span class=\x22pr\x22>from $'+wlEsc(g.cheapest)+'</span>':'')+'</button>';}" +
     "if(!h){h='<div class=\x22combo-empty\x22>No matches. Press Enter to add &quot;'+wlEsc(q)+'&quot; anyway.</div>';}" +
     "wlDrop.innerHTML=h;wlDrop.classList.add('open');" +
     "var btns=wlDrop.querySelectorAll('.combo-opt');" +
-    "for(var j=0;j<btns.length;j++){btns[j].addEventListener('click',function(){wlAddTitle(this.getAttribute('data-t'));});}" +
+    "for(var j=0;j<btns.length;j++){btns[j].addEventListener('click',function(){wlAddTitle(this.getAttribute('data-t'),this.getAttribute('data-th'));});}" +
     "}).catch(function(){wlDrop.classList.remove('open');});" +
     "},250);});" +
     "wlT.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();wlAddTitle(wlT.value);}});" +
@@ -783,10 +785,10 @@ export async function proHTML(env, email, tgUrl) {
   }
   let inner;
   if (!st.pro) {
-    inner = '<div class="plan" style="max-width:560px;margin:22px auto 0;text-align:center">' +
-      "<h3>No Pro subscription on this email</h3>" +
-      '<p class="sec-sub" style="text-align:center">Logged in as <b>' + esc(email) + '</b>, but no active Pro subscription found for it.</p>' +
-      '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">' +
+    inner = '<div class="dash-card sub">' +
+      "<h3>Go Pro</h3>" +
+      '<p class="dash-sub">Logged in as <b>' + esc(email) + '</b>. Upgrade to get fast loot alerts on Telegram and Discord, usually within 20 minutes of a drop.</p>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
       '<a class="btn" href="https://checkout.dodopayments.com/buy/pdt_0No6epRAEDlFPuD8vFMT3?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">$4/mo</a>' +
       '<a class="btn ghost" href="https://checkout.dodopayments.com/buy/pdt_0No6f9EaIF1CMH6wKBTVl?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">$39/yr</a></div></div>';
   } else {
@@ -806,11 +808,13 @@ export async function proHTML(env, email, tgUrl) {
       "var s=document.getElementById('dc_msg');if(s&&s.parentNode)s.parentNode.insertBefore(w,s);}</script>";
     inner = '<div class="dash-card sub">' +
       '<div class="dash-top"><div>' +
-      '<h3>Hunter Pro <span class="badge free">active</span></h3>' +
-      '<p class="sec-sub" style="margin:0">' + esc(email) + (planLbl ? " · " + planLbl : "") + renewLbl + "</p>" +
+      '<h3>Subscription <span class="badge free">active</span></h3>' +
+      '<p class="sec-sub" style="margin:0">' + esc(email) + (planLbl ? " · Hunter Pro " + planLbl : "") + renewLbl + "</p>" +
       '</div><a class="btn small" href="https://customer.dodopayments.com/login/bus_7luSWgVDKIjPXyCqUmjfn" target="_blank" rel="noopener">Manage billing</a></div>' +
       '<p class="fine" style="margin:10px 0 0;font-size:.8rem;color:var(--mut)">Renewal date, invoices, payment method and cancellation live in the billing portal.</p>' +
-      '<div class="dash-sep"></div>' +
+      '</div>' +
+      '<div class="dash-card"><h3>Connections</h3>' +
+      '<p class="dash-sub">Where your loot alerts land.</p>' +
       '<div class="conn-row"><div class="lbl"><b>Telegram' + (st.telegram ? ' <span class="badge free">connected</span>' : "") + "</b>" +
       "<span>" + (st.telegram ? "Loot alerts land in your Telegram." : "Connect to get fast loot alerts.") + "</span></div>" +
       (st.telegram ? '<button class="btn small ghost" onclick="tgUnlink()">Disconnect</button> <span id="tg_msg" class="sec-sub"></span>' + tgScript
@@ -823,9 +827,9 @@ export async function proHTML(env, email, tgUrl) {
       "</div>" +
       "</div>" + prefsCard(prefs) + wishlistCard(wlItems) + apiKeyCard(apiKeys);
   }
-  return navHTML("/pro") +
+  return navHTML("/dashboard") +
     '<div class="wrap"><div class="pagehead" style="text-align:center">' +
-    '<div class="overline">Your radar</div><h1>Pro dashboard</h1></div>' + inner +
+    '<h1>Dashboard</h1></div>' + inner +
     '<div style="text-align:center;margin-top:26px"><button class="btn small ghost" onclick="fetch(\'/api/auth/logout\',{method:\'POST\'}).then(function(){location.href=\'/\';})">Log out</button></div></div>' +
     footHTML();
 }
