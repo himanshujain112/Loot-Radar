@@ -1,0 +1,19 @@
+# Loot Radar — Cloudflare Worker configuration
+# NOTE: replace the FILL_ME_* placeholders with your real resource IDs
+# after creating them via the Cloudflare API (see README.md).
+
+name = "game-radar"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "loot-radar-db"
+database_id = "ca922f36-fa2e-4e85-9075-f599fbfe0aa4"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "112f820516d943c990761847702cd2d4"
+
+[triggers]
+crons = ["*/20 * * * *", "30 3 * * *"]
