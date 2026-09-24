@@ -237,6 +237,13 @@ export function pageHTML(title, desc, path, headExtra) {
     ".plan{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:28px;display:flex;flex-direction:column}" +
     ".plan-cta{margin-top:auto;padding-top:20px}" +
     ".plan.pro{border-color:rgba(34,255,136,.45)}" +
+    ".dash-card.sub{border-color:rgba(34,255,136,.45)}" +
+    ".dash-top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}" +
+    ".dash-top h3{margin:0 0 6px;font-size:1.08rem;display:flex;align-items:center;gap:10px}" +
+    ".dash-sep{border:0;border-top:1px solid var(--line);margin:16px 0 4px}" +
+    ".conn-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line)}" +
+    ".conn-row .lbl{flex:1;min-width:0}" +
+    ".conn-row .lbl b{display:flex;align-items:center;gap:8px;font-size:.93rem;font-weight:600;margin-bottom:2px}" +
     ".plan h3{font-size:1.1rem;margin-bottom:4px;display:flex;align-items:center;gap:10px}" +
     ".plan .p{font-family:'Space Grotesk';font-size:2.2rem;font-weight:700;margin:10px 0 2px}" +
     ".plan .p small{font-size:.9rem;color:var(--mut);font-family:Inter;font-weight:400}" +
@@ -783,63 +790,37 @@ export async function proHTML(env, email, tgUrl) {
       '<a class="btn" href="https://checkout.dodopayments.com/buy/pdt_0No6epRAEDlFPuD8vFMT3?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">$4/mo</a>' +
       '<a class="btn ghost" href="https://checkout.dodopayments.com/buy/pdt_0No6f9EaIF1CMH6wKBTVl?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">$39/yr</a></div></div>';
   } else {
-    inner = '<div class="plan pro" style="max-width:560px;margin:22px auto 0;text-align:center">' +
-      '<h3>Hunter Pro <span class="badge free">active</span></h3>' +
-      '<p class="sec-sub" style="text-align:center">Logged in as <b>' + esc(email) + "</b>" + (st.plan ? " · " + esc(st.plan) + " plan" : "") + "</p>" +
-      (st.telegram
-        ? '<p><span class="badge free">Telegram connected</span></p><p class="sec-sub" style="text-align:center">Loot alerts will land in your Telegram.</p>' +
-          '<button class="btn small ghost" onclick="tgUnlink()">Disconnect / switch account</button> <span id="tg_msg" class="sec-sub"></span>' +
-          "<script>async function tgUnlink(){if(!confirm('Disconnect Telegram? You can reconnect the same or a different account anytime.'))return;" +
-          "var m=document.getElementById('tg_msg');m.textContent='…';" +
-          "try{var r=await fetch('/api/telegram/unlink',{method:'POST'});if(r.ok)location.reload();else m.textContent='⚠ Could not disconnect';}" +
-          "catch(e){m.textContent='⚠ Could not disconnect';}}</script>"
-        : '<p class="sec-sub" style="text-align:center">Connect Telegram to get fast loot alerts:</p>' +
-          (tgUrl ? '<a class="btn" href="' + tgUrl + '" target="_blank" rel="noopener">Connect Telegram</a>' : "")) +
-      '<div style="margin-top:14px">' +
-      (st.discord && st.discord.dm
-        ? '<p><span class="badge free">Discord connected</span></p><p class="sec-sub" style="text-align:center">Loot alerts will land in your Discord DMs.</p>' +
-          '<button class="btn small ghost" onclick="dcUnlink()">Disconnect Discord</button> <span id="dc_msg" class="sec-sub"></span>' +
-          "<script>async function dcUnlink(){if(!confirm('Disconnect Discord? You can reconnect anytime.'))return;" +
-          "var m=document.getElementById('dc_msg');m.textContent='…';" +
-          "try{var r=await fetch('/api/discord/unlink',{method:'POST'});if(r.ok)location.reload();else m.textContent='⚠ Could not disconnect';}" +
-          "catch(e){m.textContent='⚠ Could not disconnect';}}</script>"
-        : '<p class="sec-sub" style="text-align:center">Or get alerts in your Discord DMs:</p>' +
-          '<a class="btn" href="/api/discord/connect">Connect Discord</a>') +
-      (DISCORD_SERVER_ALERTS ? (st.discord && st.discord.channel
-        ? '<p style="margin-top:14px"><span class="badge free">Server alerts on</span></p>' +
-          '<p class="sec-sub" style="text-align:center">Posting to <b>#' + esc(st.discord.channel.channel) + '</b> in ' + esc(st.discord.channel.guild) + '.</p>' +
-          '<button class="btn small ghost" onclick="dcServerUnlink()">Remove server alerts</button> <span id="dcs_msg" class="sec-sub"></span>'
-        : '<p class="sec-sub" style="text-align:center;margin-top:14px">Or post alerts in your own server:</p>' +
-          '<button class="btn" onclick="dcInvite()">Add bot to your server</button>' +
-          '<p class="sec-sub" style="text-align:center">Added it? <a href="#" onclick="dcLoadGuilds(event)">load your servers</a> and pick a channel:</p>' +
-          '<div id="dcs_pick" style="display:none;margin-top:8px">' +
-          '<select id="dcs_guild" class="field" style="min-width:0" onchange="dcLoadChannels()"><option value="">pick a server…</option></select> ' +
-          '<select id="dcs_channel" class="field" style="min-width:0;display:none"><option value="">pick a channel…</option></select> ' +
-          '<button class="btn small" id="dcs_save" style="display:none" onclick="dcSaveServer()">Save</button></div>' +
-          '<div><span id="dcs_msg" class="sec-sub"></span></div>') : "") +
-      "<script>" +
-      "async function dcInvite(){try{var r=await fetch('/api/discord/invite-url');var j=await r.json();if(j.url)window.open(j.url,'_blank');}catch(e){}}" +
-      "async function dcLoadGuilds(ev){if(ev)ev.preventDefault();var m=document.getElementById('dcs_msg');m.textContent='loading…';" +
-      "try{var r=await fetch('/api/discord/guilds');var j=await r.json();" +
-      "var s=document.getElementById('dcs_guild');s.innerHTML='<option value=\"\">pick a server…</option>';" +
-      "(j.guilds||[]).forEach(function(g){var o=document.createElement('option');o.value=g.id;o.textContent=g.name;s.appendChild(o);});" +
-      "document.getElementById('dcs_pick').style.display='block';" +
-      "m.textContent=(j.guilds&&j.guilds.length)?'':'bot is not in any server yet, add it first';}catch(e){m.textContent='could not load servers';}}" +
-      "async function dcLoadChannels(){var g=document.getElementById('dcs_guild').value;var cs=document.getElementById('dcs_channel');var sv=document.getElementById('dcs_save');cs.style.display='none';sv.style.display='none';if(!g)return;" +
-      "try{var r=await fetch('/api/discord/channels?guild_id='+encodeURIComponent(g));var j=await r.json();" +
-      "cs.innerHTML='<option value=\"\">pick a channel…</option>';" +
-      "(j.channels||[]).forEach(function(c){var o=document.createElement('option');o.value=c.id;o.textContent='#'+c.name;cs.appendChild(o);});" +
-      "cs.style.display='';cs.onchange=function(){sv.style.display=cs.value?'':'none';};}catch(e){}}" +
-      "async function dcSaveServer(){var g=document.getElementById('dcs_guild').value;var c=document.getElementById('dcs_channel').value;var m=document.getElementById('dcs_msg');if(!g||!c)return;m.textContent='saving…';" +
-      "try{var r=await fetch('/api/discord/server',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({guild_id:g,channel_id:c})});" +
-      "if(r.ok)location.reload();else m.textContent='could not save';}catch(e){m.textContent='could not save';}}" +
-      "async function dcServerUnlink(){if(!confirm('Remove server alerts? Your Discord DM link stays.'))return;var m=document.getElementById('dcs_msg');m.textContent='…';" +
-      "try{var r=await fetch('/api/discord/server/disconnect',{method:'POST'});if(r.ok)location.reload();else m.textContent='could not remove';}catch(e){m.textContent='could not remove';}}" +
+    const planLbl = st.plan === "monthly" ? "$4/mo" : st.plan === "yearly" ? "$39/yr" : (st.plan ? esc(st.plan) : "");
+    let renewLbl = "";
+    if (st.pro_until) { try { renewLbl = " · renews " + new Date(st.pro_until).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "Asia/Kolkata" }); } catch (e) {} }
+    const tgScript = "<script>async function tgUnlink(){if(!confirm('Disconnect Telegram? You can reconnect the same or a different account anytime.'))return;" +
+      "var m=document.getElementById('tg_msg');m.textContent='…';" +
+      "try{var r=await fetch('/api/telegram/unlink',{method:'POST'});if(r.ok)location.reload();else m.textContent='⚠ Could not disconnect';}" +
+      "catch(e){m.textContent='⚠ Could not disconnect';}}</script>";
+    const dcScript = "<script>async function dcUnlink(){if(!confirm('Disconnect Discord? You can reconnect anytime.'))return;" +
+      "var m=document.getElementById('dc_msg');m.textContent='…';" +
+      "try{var r=await fetch('/api/discord/unlink',{method:'POST'});if(r.ok)location.reload();else m.textContent='⚠ Could not disconnect';}}" +
+      "catch(e){m.textContent='⚠ Could not disconnect';}}" +
       "if(new URLSearchParams(location.search).get('dm')==='failed'){var w=document.createElement('p');w.className='sec-sub';w.style.color='#ff8a8a';" +
-      "w.textContent='Heads up: the bot could not DM you. Check Discord Settings → Privacy & Safety → allow DMs, or re-paste the bot token in Cloudflare. Server alerts below are unaffected.';" +
-      "var s=document.getElementById('dc_msg');if(s&&s.parentNode)s.parentNode.insertBefore(w,s);}" +
-      "</script>" +
-      '</div>' +
+      "w.textContent='Heads up: the bot could not DM you. Discord only lets bots message people they share a server with. Add the bot to a server you are in, or use Telegram for alerts.';" +
+      "var s=document.getElementById('dc_msg');if(s&&s.parentNode)s.parentNode.insertBefore(w,s);}</script>";
+    inner = '<div class="dash-card sub">' +
+      '<div class="dash-top"><div>' +
+      '<h3>Hunter Pro <span class="badge free">active</span></h3>' +
+      '<p class="sec-sub" style="margin:0">' + esc(email) + (planLbl ? " · " + planLbl : "") + renewLbl + "</p>" +
+      '</div><a class="btn small" href="https://customer.dodopayments.com/login/bus_7luSWgVDKIjPXyCqUmjfn" target="_blank" rel="noopener">Manage billing</a></div>' +
+      '<p class="fine" style="margin:10px 0 0;font-size:.8rem;color:var(--mut)">Renewal date, invoices, payment method and cancellation live in the billing portal.</p>' +
+      '<div class="dash-sep"></div>' +
+      '<div class="conn-row"><div class="lbl"><b>Telegram' + (st.telegram ? ' <span class="badge free">connected</span>' : "") + "</b>" +
+      "<span>" + (st.telegram ? "Loot alerts land in your Telegram." : "Connect to get fast loot alerts.") + "</span></div>" +
+      (st.telegram ? '<button class="btn small ghost" onclick="tgUnlink()">Disconnect</button> <span id="tg_msg" class="sec-sub"></span>' + tgScript
+        : (tgUrl ? '<a class="btn small" href="' + tgUrl + '" target="_blank" rel="noopener">Connect</a>' : "")) +
+      "</div>" +
+      '<div class="conn-row"><div class="lbl"><b>Discord' + (st.discord && st.discord.dm ? ' <span class="badge free">connected</span>' : "") + "</b>" +
+      "<span>" + (st.discord && st.discord.dm ? "Loot alerts land in your Discord DMs." : "Get alerts in your Discord DMs.") + "</span></div>" +
+      (st.discord && st.discord.dm ? '<button class="btn small ghost" onclick="dcUnlink()">Disconnect</button> <span id="dc_msg" class="sec-sub"></span>' + dcScript
+        : '<a class="btn small" href="/api/discord/connect">Connect</a>') +
+      "</div>" +
       "</div>" + prefsCard(prefs) + wishlistCard(wlItems) + apiKeyCard(apiKeys);
   }
   return navHTML("/pro") +

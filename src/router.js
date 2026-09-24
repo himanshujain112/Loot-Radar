@@ -225,12 +225,15 @@ export async function handleFetch(request, env, ctx) {
           "INSERT INTO webhook_events (type, email, payload, verified, received_at) VALUES (?, ?, ?, ?, ?)"
         ).bind(type, email, raw.slice(0, 20000), verified ? 1 : 0, now).run();
         const d = (evt && evt.data) || {};
-        const plan = (d.metadata && d.metadata.plan) || d.plan || null;
+        const pid = d.product_id || "";
+        const planFromProduct = pid === "pdt_0No6epRAEDlFPuD8vFMT3" ? "monthly"
+          : pid === "pdt_0No6f9EaIF1CMH6wKBTVl" ? "yearly" : null;
+        const plan = (d.metadata && d.metadata.plan) || d.plan || planFromProduct;
         const periodEnd = d.current_period_end || d.renews_at || d.next_billing_date || null;
         if (email && (type === "subscription.active" || type === "subscription.renewed" || type === "payment.succeeded")) {
           await env.DB.prepare(
             "INSERT INTO customers (email, pro, plan, pro_since, pro_until, deal_stores, updated_at) VALUES (?, 1, ?, ?, ?, '1,25,7,30', ?) " +
-            "ON CONFLICT(email) DO UPDATE SET pro=1, plan=excluded.plan, pro_until=excluded.pro_until, updated_at=excluded.updated_at"
+            "ON CONFLICT(email) DO UPDATE SET pro=1, plan=COALESCE(excluded.plan, customers.plan), pro_until=COALESCE(excluded.pro_until, customers.pro_until), updated_at=excluded.updated_at"
           ).bind(email, plan, now, periodEnd, now).run();
         } else if (email && (type === "subscription.cancelled" || type === "subscription.on_hold")) {
           await env.DB.prepare(
