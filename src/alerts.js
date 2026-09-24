@@ -202,9 +202,9 @@ export async function releaseClaim(env, chatId, it) {
 
 // One message for the whole scan: game name first and bold, one compact
 // detail line, then real tappable buttons (one per item) via reply_markup.
-export function alertDigestCaption(items) {
+export function alertDigestCaption(items, header) {
   const n = items.length;
-  let out = "🎮 <b>Loot Radar: " + n + " new drop" + (n === 1 ? "" : "s") + "</b>";
+  let out = header || ("🎮 <b>Loot Radar: " + n + " new drop" + (n === 1 ? "" : "s") + "</b>");
   for (const it of items) {
     if (it.kind === "deal") {
       out += "\n\n<b>" + esc(it.title) + "</b>\n" +
@@ -426,7 +426,53 @@ export async function pollAndAlert(env) {
       }
     }
   }
+  // Free tier daily summary, once per day per channel.
+  await sendFreeDailySummary(env, loot);
 }
+// Free tier: one loot summary per day per channel. Runs inside the 20-min
+// poll; the first poll of the day that has drops sends it, then a D1 marker
+// (atomic INSERT OR IGNORE) stops repeats. Quiet days send nothing.
+export async function sendFreeDailySummary(env, loot) {
+  if (!env || !env.DB) return;
+  let users = [];
+  try {
+    const q = await env.DB.prepare(
+      "SELECT email, telegram_chat_id, discord_user_id FROM customers WHERE pro = 0 AND (telegram_chat_id IS NOT NULL OR discord_user_id IS NOT NULL)"
+    ).all();
+    users = (q && q.results) || [];
+  } catch (e) { return; }
+  if (!users.length) return;
+  const deals = ((loot && loot.deals) || []).filter(d => d.savings >= 70).sort((a, b) => b.savings - a.savings);
+  const items = deals.concat((loot && loot.freebies) || []).slice(0, 8);
+  if (!items.length) return;
+  const day = new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10); // IST day
+  const nowIso = new Date().toISOString();
+  const tgHeader = "☀️ <b>Today's loot</b>\n<i>Free daily summary. Pro gets alerts fast, usually within 20 minutes: radar.codemeoww.com/pricing</i>";
+  const dcHeader = "☀️ **Today's loot**\n*Free daily summary. Pro gets alerts fast, usually within 20 minutes: radar.codemeoww.com/pricing*";
+  for (const u of users) {
+    const email = u.email;
+    if (!email) continue;
+    if (u.telegram_chat_id) {
+      try {
+        const r = await env.DB.prepare("INSERT OR IGNORE INTO free_daily_sent (email, channel, day, sent_at) VALUES (?,?,?,?)")
+          .bind(email, "telegram", day, nowIso).run();
+        if (r && r.meta && r.meta.changes > 0) {
+          await sendTelegram(env, String(u.telegram_chat_id), alertDigestCaption(items, tgHeader), alertButtons(items));
+        }
+      } catch (e) {}
+    }
+    if (u.discord_user_id && env.DISCORD_BOT_TOKEN) {
+      try {
+        const r = await env.DB.prepare("INSERT OR IGNORE INTO free_daily_sent (email, channel, day, sent_at) VALUES (?,?,?,?)")
+          .bind(email, "discord", day, nowIso).run();
+        if (r && r.meta && r.meta.changes > 0) {
+          await sendDiscordDM(env, String(u.discord_user_id), alertDigestDiscord(items, dcHeader));
+        }
+      } catch (e) {}
+    }
+  }
+}
+
 export async function handleTelegramCommand(env, chatId, text) {
   const parts = text.trim().split(/\s+/);
   const cmd = (parts[0] || "").toLowerCase().split("@")[0]; // strip @botname suffix
@@ -439,8 +485,10 @@ export async function handleTelegramCommand(env, chatId, text) {
   if (!cust) {
     return "👋 Link your Loot Radar Pro account first: log in at https://radar.codemeoww.com/login and tap <b>Connect Telegram</b> in your dashboard.";
   }
-  if (!cust.pro) {
-    return "Alerts need Loot Radar Pro. Grab it at https://radar.codemeoww.com/pricing";
+  // Free tier: /unlink and /help work for everyone. Alert tuning is Pro-only;
+  // free users get one fixed daily summary instead.
+  if (!cust.pro && { "/prefs": 1, "/freebies": 1, "/deals": 1, "/stores": 1, "/minoff": 1, "/mode": 1 }[cmd]) {
+    return "🆓 You're on the free plan: one loot summary a day, no setup needed.\n\nFast alerts the moment loot drops need Pro: https://radar.codemeoww.com/pricing";
   }
   const save = async (patch) => {
     const r = await setPrefs(env, cust.email, patch);
@@ -455,6 +503,11 @@ export async function handleTelegramCommand(env, chatId, text) {
   switch (cmd) {
     case "/prefs": return prefsSummary(normPrefs(cust));
     case "/help":
+      if (!cust.pro) {
+        return "🎮 <b>Loot Radar</b>\n\nYou're on the free plan: one loot summary a day, right here.\n\n" +
+          "/unlink: disconnect this Telegram account\n\n" +
+          "Fast alerts the moment loot drops need Pro: https://radar.codemeoww.com/pricing";
+      }
       return "🎮 <b>Loot Radar commands</b>\n\n" +
         "/prefs: show your alert settings\n" +
         "/freebies on|off: free game alerts\n" +

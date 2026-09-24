@@ -12,35 +12,31 @@ import { sessionEmail, proStatus, apiKeyAuth, rateOk } from "./auth.js";
 import { verifyDodoWebhook, dodoCustomerEmail } from "./payments.js";
 import { sendEmail, sendTelegram } from "./notify.js";
 import { setPrefs, handleTelegramCommand, pollAndAlert, sendDailyDigest, attachGameLows } from "./alerts.js";
-import { discordAuthorizeUrl, discordExchangeCode, discordOAuthUser, sendDiscordDM, discordInviteUrl, discordBotGuilds, discordGuildChannels, sendDiscordChannel } from "./discord.js";
+import { discordAuthorizeUrl, discordExchangeCode, discordOAuthUser, sendDiscordDM, discordJoinGuild, DISCORD_GUILD_ID, discordInviteUrl, discordBotGuilds, discordGuildChannels, sendDiscordChannel } from "./discord.js";
 import { magicLinkEmail } from "./emails.js";
 import {
   pageHTML, homeHTML, dealsPageHTML, freebiesPageHTML, pricingPageHTML,
   aboutPageHTML, termsPageHTML, privacyPageHTML, refundsPageHTML,
-  apiDocsPageHTML, faqPageHTML, loginHTML, thanksHTML, proHTML, jsonLD,
+  apiDocsPageHTML, faqPageHTML, loginHTML, thanksHTML, thanksActiveHTML, thanksPendingHTML, proHTML, jsonLD,
 } from "./pages.js";
+
+// Session check for server-rendered nav. Session reads are memory-cached per
+// isolate, so this is cheap enough to run on every HTML page.
+async function pageLoggedIn(request, env) {
+  try { return !!(await sessionEmail(request, env)); } catch (e) { return false; }
+}
 
 export function finalize(html, status) {
   return new Response(html, {
     status: status || 200,
     headers: {
       "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": "public, max-age=300",
+      "Cache-Control": "no-store",
       "X-Content-Type-Options": "nosniff",
       "X-Frame-Options": "DENY",
       "Referrer-Policy": "strict-origin-when-cross-origin",
     },
   });
-}
-
-export async function cachedPage(request, ctx, render) {
-  const cache = caches.default;
-  let res = await cache.match(request);
-  if (!res) {
-    res = await render();
-    ctx.waitUntil(cache.put(request, res.clone()));
-  }
-  return res;
 }
 
 export async function handleFetch(request, env, ctx) {
@@ -366,8 +362,7 @@ export async function handleFetch(request, env, ctx) {
   // ---------- Discord connect (OAuth2) + DMs ----------
   if (path === "/api/discord/connect") {
     const email = await sessionEmail(request, env);
-    const st = await proStatus(env, email);
-    if (!email || !st.pro) return new Response("Pro required", { status: 403 });
+    if (!email) return new Response("Login required", { status: 401 });
     if (!env.DISCORD_BOT_TOKEN || !env.DISCORD_CLIENT_SECRET) {
       return new Response("Discord is not configured yet", { status: 503 });
     }
@@ -387,15 +382,25 @@ export async function handleFetch(request, env, ctx) {
     const du = tok && tok.access_token ? await discordOAuthUser(tok.access_token) : null;
     if (!du || !du.id) return fail();
     try {
-      await env.DB.prepare("UPDATE customers SET discord_user_id = ?, updated_at = ? WHERE email = ?")
-        .bind(String(du.id), new Date().toISOString(), email).run();
+      await env.DB.prepare("INSERT INTO customers (email, discord_user_id, updated_at) VALUES (?, ?, ?) " +
+        "ON CONFLICT(email) DO UPDATE SET discord_user_id = excluded.discord_user_id, updated_at = excluded.updated_at")
+        .bind(email, String(du.id), new Date().toISOString()).run();
       memDel("pro:" + email);
     } catch (e) { return fail(); }
+    // Auto-join the community server so the bot can DM them (bots can't DM
+    // strangers). Re-runs on every connect, so leaving + reconnecting heals.
+    let joined = false;
+    try { joined = await discordJoinGuild(env, DISCORD_GUILD_ID, String(du.id), tok.access_token); } catch (e) {}
     // Best-effort welcome DM so the user sees it worked. Flag failure in the
     // redirect so the dashboard can say why instead of failing silently.
+    const st = await proStatus(env, email);
+    const welcome = st.pro
+      ? "🎮 Loot Radar connected! You'll get fast loot alerts here, usually within 20 minutes of a drop."
+      : "🎮 Loot Radar connected! You're on the free plan: one loot summary a day, right here. Fast alerts the moment loot drops need Pro: https://radar.codemeoww.com/pricing";
     let dmOk = false;
-    try { dmOk = await sendDiscordDM(env, String(du.id), "🎮 Loot Radar connected! You'll get fast loot alerts here, usually within 20 minutes of a drop."); } catch (e) {}
-    return Response.redirect("https://radar.codemeoww.com/dashboard?discord=ok" + (dmOk ? "" : "&dm=failed"), 302);
+    try { dmOk = await sendDiscordDM(env, String(du.id), welcome); } catch (e) {}
+    return Response.redirect("https://radar.codemeoww.com/dashboard?discord=ok" +
+      (dmOk ? "" : "&dm=failed") + (joined ? "" : "&join=failed"), 302);
   }
   if (path === "/api/discord/unlink" && request.method === "POST") {
     const email = await sessionEmail(request, env);
@@ -431,14 +436,27 @@ export async function handleFetch(request, env, ctx) {
     return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
   }
   if (path === "/login") {
-    return finalize(pageHTML("Log in: Loot Radar", "Log in to Loot Radar with a magic link to manage your Pro alerts.", "/login") +
-      loginHTML() + "</body></html>");
+    const li = await pageLoggedIn(request, env);
+    if (li) return Response.redirect("https://radar.codemeoww.com/dashboard", 302);
+    return finalize(pageHTML("Log in: Loot Radar", "Log in to Loot Radar with a magic link to manage your Pro alerts.", "/login", null, { noindex: true }) +
+      loginHTML(li) + "</body></html>");
   }
   if (path === "/thanks") {
     const q = new URL(request.url).searchParams;
     const em = (q.get("email") || "").slice(0, 120);
-    return finalize(pageHTML("You're Pro: Loot Radar", "Payment complete. Log in with your checkout email to unlock your Pro dashboard.", "/thanks") +
-      thanksHTML(em) + "</body></html>");
+    const email = await sessionEmail(request, env);
+    const head = function (d) { return pageHTML("You're Pro: Loot Radar", d, "/thanks", null, { noindex: true }); };
+    if (email) {
+      const st = await proStatus(env, email);
+      if (st.pro) {
+        return finalize(head("Your Hunter Pro subscription is active.") + thanksActiveHTML(email) + "</body></html>");
+      }
+      if (em && em.toLowerCase() === email.toLowerCase()) {
+        return finalize(head("Activating your Hunter Pro subscription.") + thanksPendingHTML(email) + "</body></html>");
+      }
+    }
+    return finalize(head("Payment complete. Log in with your checkout email to unlock your Pro dashboard.") +
+      thanksHTML(em, !!email) + "</body></html>");
   }
   if (path === "/pro") {
     const q = url.search || "";
@@ -447,49 +465,57 @@ export async function handleFetch(request, env, ctx) {
   if (path === "/dashboard") {
     const email = await sessionEmail(request, env);
     if (!email) return Response.redirect("https://radar.codemeoww.com/login", 302);
+    // Free tier: make sure the customer row exists so connections (Telegram /
+    // Discord) have somewhere to land. Existing rows are untouched.
+    if (env && env.DB) {
+      try {
+        await env.DB.prepare("INSERT INTO customers (email, pro, plan, updated_at) VALUES (?, 0, 'free', ?) ON CONFLICT(email) DO NOTHING")
+          .bind(email, new Date().toISOString()).run();
+      } catch (e) {}
+    }
     let tgUrl = null;
     if (env && env.KV) {
       const t = randHex(16);
       await env.KV.put("tglink:" + t, JSON.stringify({ email: email }), { expirationTtl: 900 });
       tgUrl = "https://t.me/games_loot_bot?start=" + t;
     }
-    return finalize(pageHTML("Dashboard: Loot Radar", "Manage your Loot Radar alerts and Telegram/Discord connections.", "/dashboard") +
+    return finalize(pageHTML("Dashboard: Loot Radar", "Manage your Loot Radar alerts and Telegram/Discord connections.", "/dashboard", null, { noindex: true }) +
       await proHTML(env, email, tgUrl) + "</body></html>");
   }
   if (path === "/pricing") {
-    return cachedPage(request, ctx, async () =>
-      finalize(pageHTML("Pro pricing: Loot Radar", "Loot Radar Pro: fast Telegram or Discord alerts and a daily email digest for free games and deals that match your alert settings. $4/month or $39/year.", "/pricing") +
-        pricingPageHTML() + "</body></html>"));
+    const li = await pageLoggedIn(request, env);
+    return finalize(pageHTML("Pro pricing: Loot Radar", "Loot Radar Pro: fast Telegram or Discord alerts and a daily email digest for free games and deals that match your alert settings. $4/month or $39/year.", "/pricing") +
+        pricingPageHTML(li) + "</body></html>");
   }
   if (path === "/faq") {
-    return cachedPage(request, ctx, async () =>
-      finalize(pageHTML("FAQ: Loot Radar", "How Loot Radar works: Pro alerts, Telegram and Discord setup, the API, cancelling, refunds.", "/faq") +
-        faqPageHTML() + "</body></html>"));
+    const li = await pageLoggedIn(request, env);
+    return finalize(pageHTML("FAQ: Loot Radar", "How Loot Radar works: Pro alerts, Telegram and Discord setup, the API, cancelling, refunds.", "/faq") +
+        faqPageHTML(li) + "</body></html>");
   }
   if (path === "/about") {
-    return cachedPage(request, ctx, async () =>
-      finalize(pageHTML("About: Loot Radar", "What Loot Radar is, how it tracks free PC games and Steam deals, and who runs it.", "/about") +
-        aboutPageHTML() + "</body></html>"));
+    const li = await pageLoggedIn(request, env);
+    return finalize(pageHTML("About: Loot Radar", "What Loot Radar is, how it tracks free PC games and Steam deals, and who runs it.", "/about") +
+        aboutPageHTML(li) + "</body></html>");
   }
   if (path === "/terms") {
-    return cachedPage(request, ctx, async () =>
-      finalize(pageHTML("Terms of service: Loot Radar", "Loot Radar terms of service: Pro subscriptions, no-refund policy, API fair use.", "/terms") +
-        termsPageHTML() + "</body></html>"));
+    const li = await pageLoggedIn(request, env);
+    return finalize(pageHTML("Terms of service: Loot Radar", "Loot Radar terms of service: Pro subscriptions, no-refund policy, API fair use.", "/terms") +
+        termsPageHTML(li) + "</body></html>");
   }
   if (path === "/privacy") {
-    return cachedPage(request, ctx, async () =>
-      finalize(pageHTML("Privacy policy: Loot Radar", "Loot Radar privacy policy: what we collect, what we never do, your rights.", "/privacy") +
-        privacyPageHTML() + "</body></html>"));
+    const li = await pageLoggedIn(request, env);
+    return finalize(pageHTML("Privacy policy: Loot Radar", "Loot Radar privacy policy: what we collect, what we never do, your rights.", "/privacy") +
+        privacyPageHTML(li) + "</body></html>");
   }
   if (path === "/refunds") {
-    return cachedPage(request, ctx, async () =>
-      finalize(pageHTML("Refund policy: Loot Radar", "Loot Radar Pro sales are final and non-refundable. Cancel anytime.", "/refunds") +
-        refundsPageHTML() + "</body></html>"));
+    const li = await pageLoggedIn(request, env);
+    return finalize(pageHTML("Refund policy: Loot Radar", "Loot Radar Pro sales are final and non-refundable. Cancel anytime.", "/refunds") +
+        refundsPageHTML(li) + "</body></html>");
   }
   if (path === "/api/docs") {
-    return cachedPage(request, ctx, async () =>
-      finalize(pageHTML("API docs: Loot Radar", "Loot Radar Pro API: live deals and freebies feeds as JSON. Authentication, endpoints, rate limits.", "/api/docs") +
-        apiDocsPageHTML() + "</body></html>"));
+    const li = await pageLoggedIn(request, env);
+    return finalize(pageHTML("API docs: Loot Radar", "Loot Radar Pro API: live deals and freebies feeds as JSON. Authentication, endpoints, rate limits.", "/api/docs") +
+        apiDocsPageHTML(li) + "</body></html>");
   }
   if (path.indexOf("/api/telegram/hook/") === 0) {
     const secret = path.slice("/api/telegram/hook/".length);
@@ -513,14 +539,19 @@ export async function handleFetch(request, env, ctx) {
           await env.DB.prepare("UPDATE customers SET telegram_chat_id = NULL, updated_at = ? WHERE telegram_chat_id = ? AND email != ?")
             .bind(nowIso, String(chatId), rec.email).run();
         } catch (e) {}
-        await env.DB.prepare("UPDATE customers SET telegram_chat_id = ?, updated_at = ? WHERE email = ?")
-          .bind(String(chatId), nowIso, rec.email).run();
-        ctx.waitUntil(sendTelegram(env, chatId,
-          "🎮 <b>Loot Radar connected!</b>\n\nYou'll get fast alerts here, usually within 20 minutes of a drop, one message per scan.\n\nTune what you get with /prefs, or anytime at radar.codemeoww.com/dashboard\n\nHappy hunting!"));
+        await env.DB.prepare("INSERT INTO customers (email, telegram_chat_id, updated_at) VALUES (?, ?, ?) " +
+          "ON CONFLICT(email) DO UPDATE SET telegram_chat_id = excluded.telegram_chat_id, updated_at = excluded.updated_at")
+          .bind(rec.email, String(chatId), nowIso).run();
+        memDel("pro:" + rec.email);
+        const st = await proStatus(env, rec.email);
+        const msg = st.pro
+          ? "🎮 <b>Loot Radar connected!</b>\n\nYou'll get fast alerts here, usually within 20 minutes of a drop, one message per scan.\n\nTune what you get with /prefs, or anytime at radar.codemeoww.com/dashboard\n\nHappy hunting!"
+          : "🎮 <b>Loot Radar connected!</b>\n\nYou're on the free plan: one loot summary a day, right here.\n\nWant fast alerts the moment loot drops? Go Pro: radar.codemeoww.com/pricing";
+        ctx.waitUntil(sendTelegram(env, chatId, msg));
       }
     } else if (text === "/start" && chatId) {
       ctx.waitUntil(sendTelegram(env, chatId,
-        "👋 Welcome to Loot Radar!\n\nTo link your Pro subscription, log in at https://radar.codemeoww.com/login and tap <b>Connect Telegram</b> in your dashboard."));
+        "👋 Welcome to Loot Radar!\n\nTo link your account, log in at https://radar.codemeoww.com/login and tap <b>Connect Telegram</b> in your dashboard."));
     } else if (chatId && text.charAt(0) === "/") {
       const reply = await handleTelegramCommand(env, chatId, text);
       if (reply) ctx.waitUntil(sendTelegram(env, chatId, reply));
@@ -528,26 +559,29 @@ export async function handleFetch(request, env, ctx) {
     return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
   }
   if (path === "/" || path === "/index.html") {
-    return cachedPage(request, ctx, async () => {
+    {
       const [freebies, deals] = await Promise.all([getFreebies(ctx), getDeals(ctx)]);
       await attachGameLows(env, deals);
-      return finalize(pageHTML(null, null, "/", jsonLD(freebies)) + homeHTML(freebies, deals) + "</body></html>");
-    });
+      const li = await pageLoggedIn(request, env);
+      return finalize(pageHTML(null, null, "/", jsonLD(freebies)) + homeHTML(freebies, deals, li) + "</body></html>");
+    }
   }
   if (path === "/deals") {
-    return cachedPage(request, ctx, async () => {
+    {
       const deals = await getDeals(ctx);
       await attachGameLows(env, deals);
+      const li = await pageLoggedIn(request, env);
       return finalize(pageHTML("Steam deals: Loot Radar", "Every Steam deal tracked by Loot Radar, sorted by biggest discount first.", "/deals") +
-        dealsPageHTML(deals) + "</body></html>");
-    });
+        dealsPageHTML(deals, li) + "</body></html>");
+    }
   }
   if (path === "/freebies") {
-    return cachedPage(request, ctx, async () => {
+    {
       const freebies = await getFreebies(ctx);
+      const li = await pageLoggedIn(request, env);
       return finalize(pageHTML("Free PC games: Loot Radar", "Every free-to-claim PC game live right now, tracked by Loot Radar.", "/freebies") +
-        freebiesPageHTML(freebies) + "</body></html>");
-    });
+        freebiesPageHTML(freebies, li) + "</body></html>");
+    }
   }
   return finalize(
     pageHTML("Not found: Loot Radar", "This page doesn't exist.", "/") +

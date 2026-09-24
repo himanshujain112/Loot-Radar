@@ -64,7 +64,7 @@ export function jsonLD(freebies) {
   return '<script type="application/ld+json">' + JSON.stringify(data).replace(/</g, "\\u003c") + "</script>";
 }
 
-export function pageHTML(title, desc, path, headExtra) {
+export function pageHTML(title, desc, path, headExtra, opts) {
   title = title || "Loot Radar: Steam deals & free PC games";
   desc = desc || "Loot Radar tracks Steam's steepest discounts and every free-to-claim PC game. Pro members get pinged fast when new loot drops.";
   path = path || "/";
@@ -73,6 +73,7 @@ export function pageHTML(title, desc, path, headExtra) {
     "<title>" + esc(title) + "</title>" +
     '<meta name="description" content="' + esc(desc) + '">' +
     '<link rel="canonical" href="https://radar.codemeoww.com' + esc(path) + '">' +
+    ((opts && opts.noindex) ? '<meta name="robots" content="noindex, nofollow">' : "") +
     '<meta property="og:type" content="website"><meta property="og:site_name" content="Loot Radar">' +
     '<meta property="og:url" content="https://radar.codemeoww.com' + esc(path) + '">' +
     '<meta property="og:title" content="' + esc(title) + '">' +
@@ -122,6 +123,9 @@ export function pageHTML(title, desc, path, headExtra) {
     ".btn.disabled{background:#1a2440;color:var(--mut);cursor:not-allowed}" +
     /* dashboard */
     ".dash-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px;max-width:640px;margin:16px auto 0;text-align:left}" +
+    ".dash-card.locked{position:relative}" +
+    ".lockwrap{position:relative;pointer-events:none;user-select:none;filter:saturate(.4);opacity:.55}" +
+    ".lock-tag{position:absolute;top:14px;right:16px;z-index:2;font-size:.72rem;font-weight:700;letter-spacing:.04em;color:#0b0e0b;background:var(--grn);border-radius:20px;padding:4px 12px}" +
     ".dash-card h3{font-size:1.05rem;margin-bottom:2px}" +
     ".dash-sub{color:var(--mut);font-size:.88rem;margin:0 0 16px}" +
     ".dash-sec{font-size:.74rem;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--mut);margin:20px 0 10px}" +
@@ -162,6 +166,7 @@ export function pageHTML(title, desc, path, headExtra) {
     ".hero h1{font-size:clamp(1.9rem,4.4vw,2.7rem);line-height:1.12;letter-spacing:-.5px;margin:10px 0 12px;max-width:22em}" +
     ".hero p.sub{color:var(--mut);font-size:1.02rem;max-width:38rem;margin-bottom:22px}" +
     ".hero-cta{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px}" +
+    ".hero-free{color:var(--mut);font-size:.86rem;margin:-8px 0 14px;max-width:38rem}" +
     /* page heads */
     ".pagehead{padding:36px 0 2px}" +
     ".pagehead h1{font-size:clamp(1.6rem,3.6vw,2.2rem);letter-spacing:-.5px;margin:10px 0 10px}" +
@@ -293,26 +298,26 @@ export function pageHTML(title, desc, path, headExtra) {
     "</style>" + (headExtra || "") + "</head><body>";
 }
 
-export function navHTML(active) {
+export function navHTML(active, loggedIn) {
   function nl(path, label) {
     return '<a class="nl' + (active === path ? " active" : "") + '" href="' + path + '">' + label + "</a>";
   }
   function mnl(path, label) {
     return '<a class="' + (active === path ? "on" : "") + '" href="' + path + '">' + label + "</a>";
   }
+  // Auth state is rendered server-side from the session cookie, so the nav is
+  // correct on first paint. No client-side swap, no flash of wrong buttons.
+  const authLinks = loggedIn
+    ? '<a class="nl keep" id="nav_dash" href="/dashboard">Dashboard</a>'
+    : '<a class="nl keep" id="nav_login" href="/login">Log in</a>' +
+      '<a class="btn small" id="nav_gopro" href="/pricing">Go Pro</a>';
   return '<nav><div class="wrap nav-in">' +
     '<a class="logo grotesk" href="/"><img src="/logo.svg" width="24" height="24" alt="Loot Radar logo" style="border-radius:6px"><span>Loot<b>Radar</b></span></a>' +
     '<div class="nav-links">' +
     nl("/", "Home") + nl("/deals", "Deals") + nl("/freebies", "Freebies") + nl("/faq", "FAQ") +
-    '<span class="spacer"></span><a class="nl keep" id="nav_login" href="/login">Log in</a>' +
-    '<a class="btn small" id="nav_gopro" href="/pricing">Go Pro</a>' +
+    '<span class="spacer"></span>' + authLinks +
     "</div></div>" +
-    '<div class="mnav">' + mnl("/", "Home") + mnl("/deals", "Deals") + mnl("/freebies", "Freebies") + mnl("/faq", "FAQ") + "</div></nav>" +
-    "<script>(function(){fetch('/api/auth/me').then(function(r){return r.json();}).then(function(d){" +
-    "if(d&&d.email){var li=document.getElementById('nav_login');" +
-    "if(li)li.outerHTML='<a class=\"nl keep\" id=\"nav_dash\" href=\"/dashboard\">Dashboard</a>';" +
-    "var gp=document.getElementById('nav_gopro');if(gp)gp.remove();}" +
-    "}).catch(function(){});})();</script>";
+    '<div class="mnav">' + mnl("/", "Home") + mnl("/deals", "Deals") + mnl("/freebies", "Freebies") + mnl("/faq", "FAQ") + "</div></nav>";
 }
 
 export function footHTML() {
@@ -327,7 +332,7 @@ export function footHTML() {
     "</footer>";
 }
 
-export function homeHTML(freebies, deals) {
+export function homeHTML(freebies, deals, loggedIn) {
   const topDeals = deals.slice(0, 8);
   const nowMs = Date.now();
   // FOMO split: anything expiring within 48h gets a "Last call" strip on top,
@@ -338,12 +343,13 @@ export function homeHTML(freebies, deals) {
   const urgLine = urgent.length
     ? '<p class="hero-urgency">⚡ <b>' + urgent.length + '</b> free game' + (urgent.length > 1 ? "s vanish" : " vanishes") + ' in the next 48 hours · <span data-sweep>next sweep soon</span></p>'
     : '<p class="hero-urgency"><span data-sweep>next sweep soon</span> · new drops land every 20 minutes</p>';
-  return navHTML("/") +
+  return navHTML("/", loggedIn) +
   '<div class="wrap"><header class="hero">' +
     "<h1>PC game deals and freebies in one place.</h1>" +
     '<p class="sub">Track free PC games, deep discounts, and limited time deals across multiple stores including steam, epic games, GOG and more, all in one place, updated every 20 min!</p>' +
     '<div class="hero-cta"><a class="btn" href="/freebies">See what\'s free</a>' +
     '<a class="btn ghost" href="/deals">Browse today\'s deals</a></div>' +
+    '<p class="hero-free">free accounts get one loot summary a day. pro gets alerts fast, usually within 20 minutes.</p>' +
     urgLine +
   "</header>" +
 
@@ -378,8 +384,8 @@ export function homeHTML(freebies, deals) {
   "</div>" + COUNTDOWN_JS + footHTML();
 }
 
-export function dealsPageHTML(deals) {
-  return navHTML("/deals") +
+export function dealsPageHTML(deals, loggedIn) {
+  return navHTML("/deals", loggedIn) +
   '<div class="wrap"><div class="pagehead">' +
     '<div class="overline">Price drops</div><h1>Steam deals</h1>' +
     "<p>" + deals.length + " deals tracked, sorted by biggest discount first. Prices refresh every 20 minutes.</p>" +
@@ -389,8 +395,8 @@ export function dealsPageHTML(deals) {
   "</div></div>" + footHTML();
 }
 
-export function freebiesPageHTML(freebies) {
-  return navHTML("/freebies") +
+export function freebiesPageHTML(freebies, loggedIn) {
+  return navHTML("/freebies", loggedIn) +
   '<div class="wrap"><div class="pagehead">' +
     '<div class="overline">On the radar</div><h1>Free to claim</h1>' +
     "<p>Every free PC game live right now, but not for long. Claim buttons go straight to the source, no catch.</p>" +
@@ -402,8 +408,8 @@ export function freebiesPageHTML(freebies) {
   '<p class="srcattr">Freebies data by <a href="https://www.gamerpower.com" target="_blank" rel="noopener">GamerPower</a></p></div>' + COUNTDOWN_JS + footHTML();
 }
 
-export function pricingPageHTML() {
-  return navHTML("/pricing") +
+export function pricingPageHTML(loggedIn) {
+  return navHTML("/pricing", loggedIn) +
   '<div class="wrap"><div class="pagehead">' +
     '<div class="overline">Pricing</div><h1>Free forever. Pro for loot hunters.</h1>' +
     '<p>Browse every freebie and deal free. Pro alerts you fast, before freebies expire.</p>' +
@@ -411,7 +417,7 @@ export function pricingPageHTML() {
   '<div class="plans">' +
     '<div class="plan"><h3>Scout</h3><div class="p">$0<small> / forever</small></div>' +
     '<div class="per">For casual browsers</div>' +
-    "<ul><li>Live freebies feed</li><li>Steam deals feed</li><li>New drops every 20 min</li>" +
+    "<ul><li>Live freebies feed</li><li>Steam deals feed</li><li>New drops every 20 min</li><li>Free daily loot summary on Telegram or Discord</li>" +
     '<li class="no">Fast loot alerts</li><li class="no">Email digest</li></ul>' +
     '<div class="plan-cta"><a class="btn ghost" href="/freebies">Browse free loot</a></div></div>' +
     '<div class="plan pro"><h3>Hunter <span class="badge free">Pro</span></h3>' +
@@ -425,8 +431,8 @@ export function pricingPageHTML() {
   "</div></div>" + footHTML();
 }
 
-export function aboutPageHTML() {
-  return navHTML("/about") +
+export function aboutPageHTML(loggedIn) {
+  return navHTML("/about", loggedIn) +
   '<div class="wrap"><div class="pagehead">' +
     '<div class="overline">About</div><h1>A radar for game loot.</h1>' +
   '</div><div class="legal">' +
@@ -440,8 +446,8 @@ export function aboutPageHTML() {
   "</div></div>" + footHTML();
 }
 
-export function termsPageHTML() {
-  return navHTML("/terms") +
+export function termsPageHTML(loggedIn) {
+  return navHTML("/terms", loggedIn) +
   '<div class="wrap"><div class="pagehead">' +
     '<div class="overline">Legal</div><h1>Terms of service</h1>' +
     '<p>Last updated: September 2026. By using Loot Radar you agree to these terms.</p>' +
@@ -463,8 +469,8 @@ export function termsPageHTML() {
   "</div></div>" + footHTML();
 }
 
-export function privacyPageHTML() {
-  return navHTML("/privacy") +
+export function privacyPageHTML(loggedIn) {
+  return navHTML("/privacy", loggedIn) +
   '<div class="wrap"><div class="pagehead">' +
     '<div class="overline">Legal</div><h1>Privacy policy</h1>' +
     '<p>Last updated: September 2026. Short version: we collect the minimum needed to run alerts, and we never sell your data.</p>' +
@@ -490,8 +496,8 @@ export function privacyPageHTML() {
   "</div></div>" + footHTML();
 }
 
-export function refundsPageHTML() {
-  return navHTML("/refunds") +
+export function refundsPageHTML(loggedIn) {
+  return navHTML("/refunds", loggedIn) +
   '<div class="wrap"><div class="pagehead">' +
     '<div class="overline">Legal</div><h1>Refund policy</h1>' +
     '<p>Last updated: September 2026.</p>' +
@@ -507,8 +513,8 @@ export function refundsPageHTML() {
   "</div></div>" + footHTML();
 }
 
-export function apiDocsPageHTML() {
-  return navHTML("/api/docs") +
+export function apiDocsPageHTML(loggedIn) {
+  return navHTML("/api/docs", loggedIn) +
   '<div class="wrap"><div class="pagehead">' +
     '<div class="overline">Developers</div><h1>Loot Radar API</h1>' +
     "<p>The same live feeds that power this site, free-to-claim PC games and 70%+ Steam deals, as JSON. <strong>Pro members only.</strong> Get your key on the <a href=\"/dashboard\" style=\"color:var(--txt);text-decoration:underline;text-decoration-color:rgba(255,255,255,.35)\">dashboard</a>.</p>" +
@@ -561,9 +567,9 @@ export function faqData() {
     ["q2", "How does Loot Radar work?",
       "Every 20 minutes the radar sweeps deal feeds and giveaway listings. Everything it finds is shown live and free on this site. Pro members also get fast Telegram or Discord alerts (usually within 20 minutes), plus one email digest every morning."],
     ["q3", "Is Loot Radar free?",
-      "Yes. Browsing every deal and freebie on the site is free forever, no account needed. Loot Radar Pro ($4/month or $39/year) pays for fast Telegram or Discord alerts (usually within 20 minutes), the morning email digest, wishlist price tracking and API access."],
+      "Yes. Browsing every deal and freebie is free forever, no account needed. Make a free account and connect Telegram or Discord for one free loot summary a day. Pro ($4/month or $39/year) gets fast alerts (usually within 20 minutes) the moment loot drops, the morning email digest, wishlist price tracking and API access."],
     ["q4", "What is Loot Radar Pro?",
-      "Pro is the paid tier for loot hunters: fast Telegram or Discord alerts for every free-to-claim game and every deal matching your alert settings (your stores, 50-95% off, all deals or wishlist only), one email digest each morning, wishlist price watch, and a Pro API key. $4/month or $39/year, cancel anytime."],
+      "Pro is the paid tier for loot hunters: fast Telegram or Discord alerts for every free-to-claim game and every deal matching your alert settings (your stores, 50-95% off, all deals or wishlist only), one email digest each morning, wishlist price watch, and a Pro API key. $4/month or $39/year, cancel anytime. Free accounts get one loot summary a day instead of fast alerts."],
     ["q5", "How do I claim a free PC game?",
       "Open the <a href=\"/freebies\">Freebies</a> page, pick a game and hit Claim. The button takes you straight to the source (Epic, Steam, GOG, IndieGala and more). Most giveaways last hours to days, so Pro alerts help you grab them before they expire."],
     ["q6", "Which stores does Loot Radar track?",
@@ -571,7 +577,7 @@ export function faqData() {
     ["q7", "How often are deals and freebies updated?",
       "The radar scans its sources every 20 minutes, and the site updates with each scan. Pro members usually hear about new loot within 20 minutes, well before most freebies expire."],
     ["q8", "How do the alerts work?",
-      "Log in with the email you used at checkout, open your <a href=\"/dashboard\">dashboard</a> and connect Telegram, Discord, or both. Telegram takes about ten seconds with <b>Connect Telegram</b>. For Discord you can get DMs with <b>Connect Discord</b>, or add the bot to your own server and pick a channel for alerts to land in. When new loot drops you get <b>one message</b> listing everything new (usually within 20 minutes), capped at 8 items per scan so you're never spammed. The same drop is never alerted twice to the same account. To switch Telegram accounts, hit <b>Disconnect / switch account</b> on the dashboard, or send /unlink in Telegram, then connect the new one."],
+      "Make a free account or grab Pro, open your <a href=\"/dashboard\">dashboard</a> and connect Telegram, Discord, or both. Free accounts get one loot summary a day. Telegram takes about ten seconds with <b>Connect Telegram</b>. For Discord you can get DMs with <b>Connect Discord</b>, or add the bot to your own server and pick a channel for alerts to land in. When new loot drops you get <b>one message</b> listing everything new (usually within 20 minutes), capped at 8 items per scan so you're never spammed. The same drop is never alerted twice to the same account. To switch Telegram accounts, hit <b>Disconnect / switch account</b> on the dashboard, or send /unlink in Telegram, then connect the new one."],
     ["q8b", "What are all-time low alerts?",
       "Every deal row on the site is checked against the lowest price that game has ever sold for. Deals sitting at their all-time low get a badge on the site and a 🏆 tag in Pro alerts. If a game on your wishlist hits its all-time low, you get alerted even when the discount is under your usual minimum."],
     ["q13", "Can I choose what alerts I get?",
@@ -612,9 +618,9 @@ export function homeFaqHTML() {
   return '<div class="faqwrap home-faq">' + items + "</div>";
 }
 
-export function faqPageHTML() {
+export function faqPageHTML(loggedIn) {
   const items = faqData().map(([id, q, a]) => faqItem(id, q, a));
-  return navHTML("/faq") +
+  return navHTML("/faq", loggedIn) +
   '<div class="wrap"><div class="pagehead">' +
     '<div class="overline">FAQ</div><h1>Questions, answered</h1>' +
     '<p>What Loot Radar is, how alerts work, Pro billing, the API: the stuff people ask.</p>' +
@@ -622,8 +628,8 @@ export function faqPageHTML() {
   '<div class="faqwrap">' + items.join("") + "</div></div>" + faqJSONLD() + footHTML();
 }
 
-export function loginHTML() {
-  return navHTML("/login") +
+export function loginHTML(loggedIn) {
+  return navHTML("/login", loggedIn) +
   '<div class="wrap" style="display:flex;justify-content:center;padding:56px 0">' +
   '<div class="plan" style="max-width:400px;width:100%;text-align:center">' +
     '<img src="/logo.svg" width="44" height="44" alt="Loot Radar logo" style="border-radius:10px">' +
@@ -640,9 +646,9 @@ export function loginHTML() {
   footHTML();
 }
 
-export function thanksHTML(prefill) {
+export function thanksHTML(prefill, loggedIn) {
   const em = esc(prefill || "");
-  return navHTML("/thanks") +
+  return navHTML("/thanks", loggedIn) +
   '<div class="wrap" style="max-width:520px"><div class="pagehead">' +
     '<div class="overline">Payment complete</div><h1>You are Pro now</h1>' +
     '<p>Your subscription is active. One last step: log in with the email you used at checkout, and your Pro dashboard unlocks.</p>' +
@@ -653,6 +659,33 @@ export function thanksHTML(prefill) {
   '<p id="lm" class="sec-sub" style="margin-top:14px"></p>' +
   '<p class="sec-sub" style="margin-top:14px">Didn\'t land here from Dodo\'s checkout? Log in with your checkout email anyway. Pro is tied to that email.</p>' +
   "<script>document.getElementById('lf').addEventListener('submit',async function(e){e.preventDefault();var em=document.getElementById('le').value;var m=document.getElementById('lm');m.textContent='Sending…';try{await fetch('/api/auth/request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:em})});m.textContent='Link sent! Check your inbox (and spam folder). One link per 15 minutes. Use the latest email.';}catch(_){m.textContent='Something went wrong. Try again.';}});</script>" +
+  "</div>" + footHTML();
+}
+
+// /thanks when the session email is already Pro.
+export function thanksActiveHTML(email) {
+  return navHTML("/thanks", true) +
+  '<div class="wrap" style="max-width:520px"><div class="pagehead">' +
+    '<div class="overline">Payment complete</div><h1>Your Hunter Pro is active!</h1>' +
+    '<p>Logged in as <b>' + esc(email) + '</b>. Your fast loot alerts are ready.</p>' +
+  "</div>" +
+  '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:20px">' +
+  '<a class="btn" href="/dashboard">Go to dashboard</a></div>' +
+  "</div>" + footHTML();
+}
+
+// /thanks when the user paid with the session email but the webhook hasn't
+// flipped Pro yet. Polls /api/auth/me and flips to the dashboard itself.
+export function thanksPendingHTML(email) {
+  return navHTML("/thanks", true) +
+  '<div class="wrap" style="max-width:520px"><div class="pagehead">' +
+    '<div class="overline">Payment complete</div><h1>Activating your Pro&hellip;</h1>' +
+    '<p>Logged in as <b>' + esc(email) + '</b>. This usually takes a few seconds. You will land on your dashboard automatically.</p>' +
+  "</div>" +
+  '<p id="pm" class="sec-sub" style="margin-top:14px">Waiting for payment confirmation&hellip;</p>' +
+  '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:20px">' +
+  '<a class="btn ghost" href="/dashboard">Go to dashboard anyway</a></div>' +
+  "<script>(function(){var n=0;var t=setInterval(function(){n++;fetch('/api/auth/me').then(function(r){return r.json();}).then(function(d){if(d&&d.pro){clearInterval(t);location.href='/dashboard';}}).catch(function(){});if(n>40){clearInterval(t);var m=document.getElementById('pm');if(m)m.textContent='Still not active? Give it a minute, then open your dashboard.';}},3000);})();</script>" +
   "</div>" + footHTML();
 }
 
@@ -767,6 +800,39 @@ export function apiKeyCard(keys) {
     "</div>";
 }
 
+// Connections card shared by the Pro and free dashboard views.
+function connCard(st, tgUrl) {
+  const tgScript = "<script>async function tgUnlink(){if(!confirm('Disconnect Telegram? You can reconnect the same or a different account anytime.'))return;" +
+    "var m=document.getElementById('tg_msg');m.textContent='…';" +
+    "try{var r=await fetch('/api/telegram/unlink',{method:'POST'});if(r.ok)location.reload();else m.textContent='⚠ Could not disconnect';}" +
+    "catch(e){m.textContent='⚠ Could not disconnect';}}</script>";
+  const dcScript = "<script>async function dcUnlink(){if(!confirm('Disconnect Discord? You can reconnect anytime.'))return;" +
+    "var m=document.getElementById('dc_msg');m.textContent='…';" +
+    "try{var r=await fetch('/api/discord/unlink',{method:'POST'});if(r.ok)location.reload();else m.textContent='⚠ Could not disconnect';}}" +
+    "catch(e){m.textContent='⚠ Could not disconnect';}}" +
+    "if(new URLSearchParams(location.search).get('dm')==='failed'){var w=document.createElement('p');w.className='sec-sub';w.style.color='#ff8a8a';" +
+    "w.innerHTML='Heads up: the bot could not DM you. <a href=\"https://discord.gg/eCB9rx9b8B\" target=\"_blank\" rel=\"noopener\" style=\"color:#ff8a8a\">Join our Discord server</a> and allow DMs from server members, then reconnect.';" +
+    "var s=document.getElementById('dc_msg');if(s&&s.parentNode)s.parentNode.insertBefore(w,s);}</script>";
+  return '<div class="dash-card"><h3>Connections</h3>' +
+    '<p class="dash-sub">Where your loot alerts land.</p>' +
+    '<div class="conn-row"><div class="lbl"><b>Telegram' + (st.telegram ? ' <span class="badge free">connected</span>' : "") + "</b>" +
+    "<span>" + (st.telegram ? "Loot alerts land in your Telegram." : "Connect to get loot alerts.") + "</span></div>" +
+    (st.telegram ? '<button class="btn small ghost" onclick="tgUnlink()">Disconnect</button> <span id="tg_msg" class="sec-sub"></span>' + tgScript
+      : (tgUrl ? '<a class="btn small" href="' + tgUrl + '" target="_blank" rel="noopener">Connect</a>' : "")) +
+    "</div>" +
+    '<div class="conn-row"><div class="lbl"><b>Discord' + (st.discord && st.discord.dm ? ' <span class="badge free">connected</span>' : "") + "</b>" +
+    "<span>" + (st.discord && st.discord.dm ? "Loot alerts land in your Discord DMs." : "We add you to our Discord server automatically so the bot can DM you.") + "</span></div>" +
+    (st.discord && st.discord.dm ? '<button class="btn small ghost" onclick="dcUnlink()">Disconnect</button> <span id="dc_msg" class="sec-sub"></span>' + dcScript
+      : '<a class="btn small" href="/api/discord/connect">Connect</a>') +
+    "</div>" +
+    "</div>";
+}
+
+// Wrap a Pro-only card so free users see it dimmed with a "Pro required" tag.
+function lockedCard(cardHtml) {
+  return '<div class="lockwrap" title="Pro required"><span class="lock-tag">Pro required</span>' + cardHtml + "</div>";
+}
+
 export async function proHTML(env, email, tgUrl) {
   const st = await proStatus(env, email);
   let wlItems = [];
@@ -787,25 +853,16 @@ export async function proHTML(env, email, tgUrl) {
   if (!st.pro) {
     inner = '<div class="dash-card sub">' +
       "<h3>Go Pro</h3>" +
-      '<p class="dash-sub">Logged in as <b>' + esc(email) + '</b>. Upgrade to get fast loot alerts on Telegram and Discord, usually within 20 minutes of a drop.</p>' +
+      '<p class="dash-sub">Logged in as <b>' + esc(email) + '</b>. You are on the free plan: one loot summary a day on Telegram and Discord. Upgrade for fast alerts, usually within 20 minutes of a drop.</p>' +
       '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
       '<a class="btn" href="https://checkout.dodopayments.com/buy/pdt_0No6epRAEDlFPuD8vFMT3?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">$4/mo</a>' +
-      '<a class="btn ghost" href="https://checkout.dodopayments.com/buy/pdt_0No6f9EaIF1CMH6wKBTVl?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">$39/yr</a></div></div>';
+      '<a class="btn ghost" href="https://checkout.dodopayments.com/buy/pdt_0No6f9EaIF1CMH6wKBTVl?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">$39/yr</a></div></div>' +
+      connCard(st, tgUrl) +
+      lockedCard(prefsCard(prefs)) + lockedCard(wishlistCard(wlItems)) + lockedCard(apiKeyCard(apiKeys));
   } else {
     const planLbl = st.plan === "monthly" ? "$4/mo" : st.plan === "yearly" ? "$39/yr" : (st.plan ? esc(st.plan) : "");
     let renewLbl = "";
     if (st.pro_until) { try { renewLbl = " · renews " + new Date(st.pro_until).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "Asia/Kolkata" }); } catch (e) {} }
-    const tgScript = "<script>async function tgUnlink(){if(!confirm('Disconnect Telegram? You can reconnect the same or a different account anytime.'))return;" +
-      "var m=document.getElementById('tg_msg');m.textContent='…';" +
-      "try{var r=await fetch('/api/telegram/unlink',{method:'POST'});if(r.ok)location.reload();else m.textContent='⚠ Could not disconnect';}" +
-      "catch(e){m.textContent='⚠ Could not disconnect';}}</script>";
-    const dcScript = "<script>async function dcUnlink(){if(!confirm('Disconnect Discord? You can reconnect anytime.'))return;" +
-      "var m=document.getElementById('dc_msg');m.textContent='…';" +
-      "try{var r=await fetch('/api/discord/unlink',{method:'POST'});if(r.ok)location.reload();else m.textContent='⚠ Could not disconnect';}}" +
-      "catch(e){m.textContent='⚠ Could not disconnect';}}" +
-      "if(new URLSearchParams(location.search).get('dm')==='failed'){var w=document.createElement('p');w.className='sec-sub';w.style.color='#ff8a8a';" +
-      "w.textContent='Heads up: the bot could not DM you. Discord only lets bots message people they share a server with. Add the bot to a server you are in, or use Telegram for alerts.';" +
-      "var s=document.getElementById('dc_msg');if(s&&s.parentNode)s.parentNode.insertBefore(w,s);}</script>";
     inner = '<div class="dash-card sub">' +
       '<div class="dash-top"><div>' +
       '<h3>Subscription <span class="badge free">active</span></h3>' +
@@ -813,21 +870,9 @@ export async function proHTML(env, email, tgUrl) {
       '</div><a class="btn small" href="https://customer.dodopayments.com/login/bus_7luSWgVDKIjPXyCqUmjfn" target="_blank" rel="noopener">Manage billing</a></div>' +
       '<p class="fine" style="margin:10px 0 0;font-size:.8rem;color:var(--mut)">Renewal date, invoices, payment method and cancellation live in the billing portal.</p>' +
       '</div>' +
-      '<div class="dash-card"><h3>Connections</h3>' +
-      '<p class="dash-sub">Where your loot alerts land.</p>' +
-      '<div class="conn-row"><div class="lbl"><b>Telegram' + (st.telegram ? ' <span class="badge free">connected</span>' : "") + "</b>" +
-      "<span>" + (st.telegram ? "Loot alerts land in your Telegram." : "Connect to get fast loot alerts.") + "</span></div>" +
-      (st.telegram ? '<button class="btn small ghost" onclick="tgUnlink()">Disconnect</button> <span id="tg_msg" class="sec-sub"></span>' + tgScript
-        : (tgUrl ? '<a class="btn small" href="' + tgUrl + '" target="_blank" rel="noopener">Connect</a>' : "")) +
-      "</div>" +
-      '<div class="conn-row"><div class="lbl"><b>Discord' + (st.discord && st.discord.dm ? ' <span class="badge free">connected</span>' : "") + "</b>" +
-      "<span>" + (st.discord && st.discord.dm ? "Loot alerts land in your Discord DMs." : "Get alerts in your Discord DMs.") + "</span></div>" +
-      (st.discord && st.discord.dm ? '<button class="btn small ghost" onclick="dcUnlink()">Disconnect</button> <span id="dc_msg" class="sec-sub"></span>' + dcScript
-        : '<a class="btn small" href="/api/discord/connect">Connect</a>') +
-      "</div>" +
-      "</div>" + prefsCard(prefs) + wishlistCard(wlItems) + apiKeyCard(apiKeys);
+      connCard(st, tgUrl) + prefsCard(prefs) + wishlistCard(wlItems) + apiKeyCard(apiKeys);
   }
-  return navHTML("/dashboard") +
+  return navHTML("/dashboard", true) +
     '<div class="wrap"><div class="pagehead" style="text-align:center">' +
     '<h1>Dashboard</h1></div>' + inner +
     '<div style="text-align:center;margin-top:26px"><button class="btn small ghost" onclick="fetch(\'/api/auth/logout\',{method:\'POST\'}).then(function(){location.href=\'/\';})">Log out</button></div></div>' +

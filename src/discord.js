@@ -4,7 +4,7 @@ export const DISCORD_SERVER_ALERTS = false;
 
 // Discord alerts: OAuth2 connect flow + bot DMs through the REST API.
 // No gateway connection needed; the bot never has to stay online.
-// Users link from the Pro dashboard; the worker DMs them like Telegram.
+// Users link from the dashboard (free or Pro); the worker DMs them like Telegram.
 
 const API = "https://discord.com/api/v10";
 const APP_URL = "https://radar.codemeoww.com";
@@ -22,10 +22,32 @@ export function discordAuthorizeUrl(env, state) {
     client_id: discordClientId(env),
     redirect_uri: discordRedirectUri(),
     response_type: "code",
-    scope: "identify",
+    // identify: who they are. guilds.join: add them to the community server
+    // automatically so the bot can DM them (bots can't DM strangers).
+    scope: "identify guilds.join",
     state,
   });
   return "https://discord.com/oauth2/authorize?" + q.toString();
+}
+
+// Community server: users get auto-added here on connect so DMs work.
+export const DISCORD_GUILD_ID = "1552766269189529721";
+export const DISCORD_INVITE_URL = "https://discord.gg/eCB9rx9b8B";
+
+// Add a user to the community guild using their OAuth grant. Best-effort:
+// returns true if Discord accepted, false otherwise (bot not in guild, user
+// revoked, etc). Uses the bot token; the user's access_token authorizes it.
+export async function discordJoinGuild(env, guildId, userId, accessToken) {
+  if (!env || !env.DISCORD_BOT_TOKEN || !guildId || !userId || !accessToken) return false;
+  try {
+    const res = await fetch(API + "/guilds/" + guildId + "/members/" + userId, {
+      method: "PUT",
+      headers: botHeaders(env),
+      body: JSON.stringify({ access_token: accessToken }),
+    });
+    // 201 = newly added, 204 = already a member. Anything else = failed.
+    return res.status === 201 || res.status === 204;
+  } catch (e) { return false; }
 }
 
 // OAuth2 code -> user access token (identity only, no bot install needed).
@@ -149,10 +171,10 @@ export async function sendDiscordChannel(env, channelId, text) {
     return res.ok;
   } catch (e) { return false; }
 }
-export function alertDigestDiscord(items) {
+export function alertDigestDiscord(items, header) {
   const n = items.length;
   const t = function (s) { return String(s || "").replace(/[\[\]]/g, ""); }; // keep [..](..) links intact
-  let out = "🎮 **Loot Radar: " + n + " new drop" + (n === 1 ? "" : "s") + "**";
+  let out = header || ("🎮 **Loot Radar: " + n + " new drop" + (n === 1 ? "" : "s") + "**");
   for (const it of items) {
     const title = it.url ? "[**" + t(it.title) + "**](" + it.url + ")" : "**" + t(it.title) + "**";
     if (it.kind === "deal") {
