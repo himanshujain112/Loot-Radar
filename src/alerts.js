@@ -34,15 +34,18 @@ export async function fetchLootItems(env, storeIDs) {
   // Memory (10 min) -> KV (20 min, shared across isolates/crons) -> upstream, keyed per store set.
   // KV writes: 2 per refresh (~144/day), far under the 500/day target.
   const stores = (Array.isArray(storeIDs) && storeIDs.length ? storeIDs : DEFAULT_DEAL_STORES).filter(s => ACTIVE_ALERT_STORES.includes(s));
-  const dealKey = "loot:deals:" + stores.slice().sort().join(",");
-  const mFree = memGet("loot:freebies"), mDeals = memGet(dealKey);
+  // Cache version: bump when the cached item shape changes so a deploy
+  // never reads stale-shaped rows written by older code.
+  const CV = "loot:v2:";
+  const dealKey = CV + "deals:" + stores.slice().sort().join(",");
+  const mFree = memGet(CV + "freebies"), mDeals = memGet(dealKey);
   if (mFree && mDeals) return { freebies: mFree, deals: mDeals };
   if (env && env.KV) {
     try {
-      const kvFree = await env.KV.get("loot:freebies", "json");
+      const kvFree = await env.KV.get(CV + "freebies", "json");
       const kvDeals = await env.KV.get(dealKey, "json");
       if (kvFree && kvDeals) {
-        memPut("loot:freebies", kvFree, 600);
+        memPut(CV + "freebies", kvFree, 600);
         memPut(dealKey, kvDeals, 600);
         return { freebies: kvFree, deals: kvDeals };
       }
@@ -104,11 +107,11 @@ export async function fetchLootItems(env, storeIDs) {
     deals.sort((a, b) => b.savings - a.savings);
   } catch (e) {}
   // Write back to memory + KV so the next 20 minutes of crons/pages reuse it.
-  memPut("loot:freebies", freebies, 600);
+  memPut(CV + "freebies", freebies, 600);
   memPut(dealKey, deals, 600);
   if (env && env.KV) {
     try {
-      await env.KV.put("loot:freebies", JSON.stringify(freebies), { expirationTtl: 1200 });
+      await env.KV.put(CV + "freebies", JSON.stringify(freebies), { expirationTtl: 1200 });
       await env.KV.put(dealKey, JSON.stringify(deals), { expirationTtl: 1200 });
     } catch (e) {}
   }
