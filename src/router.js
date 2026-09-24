@@ -27,6 +27,7 @@ export function finalize(html, status) {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "public, max-age=300",
       "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "DENY",
       "Referrer-Policy": "strict-origin-when-cross-origin",
     },
   });
@@ -264,6 +265,17 @@ export async function handleFetch(request, env, ctx) {
     let email = "";
     try { email = (await request.json()).email || ""; } catch (e) {}
     email = String(email).trim().toLowerCase();
+    // Per-IP throttle: max 10 magic-link requests/hour. Without this, one IP
+    // could request links for endless addresses and burn the email budget.
+    if (env && env.KV) {
+      const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+      try {
+        const k = "ratelimit:magic:" + ip;
+        const n = (parseInt(await env.KV.get(k) || "0", 10) || 0) + 1;
+        if (n > 10) return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
+        await env.KV.put(k, String(n), { expirationTtl: 3600 });
+      } catch (e) {}
+    }
     if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && env && env.KV) {
       // One magic-link email per 15 minutes per address, a valid link is already in their inbox.
       const recent = await env.KV.get("magicemail:" + email);
