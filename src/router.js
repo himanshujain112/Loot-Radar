@@ -11,7 +11,7 @@ import {
 import { sessionEmail, proStatus, apiKeyAuth, rateOk } from "./auth.js";
 import { verifyDodoWebhook, dodoCustomerEmail } from "./payments.js";
 import { sendEmail, sendTelegram } from "./notify.js";
-import { setPrefs, handleTelegramCommand, pollAndAlert, sendDailyDigest } from "./alerts.js";
+import { setPrefs, handleTelegramCommand, pollAndAlert, sendDailyDigest, attachGameLows } from "./alerts.js";
 import { magicLinkEmail } from "./emails.js";
 import {
   pageHTML, homeHTML, dealsPageHTML, freebiesPageHTML, pricingPageHTML,
@@ -397,12 +397,14 @@ export async function handleFetch(request, env, ctx) {
   if (path === "/" || path === "/index.html") {
     return cachedPage(request, ctx, async () => {
       const [freebies, deals] = await Promise.all([getFreebies(ctx), getDeals(ctx)]);
+      await attachGameLows(env, deals);
       return finalize(pageHTML(null, null, "/", jsonLD(freebies)) + homeHTML(freebies, deals) + "</body></html>");
     });
   }
   if (path === "/deals") {
     return cachedPage(request, ctx, async () => {
       const deals = await getDeals(ctx);
+      await attachGameLows(env, deals);
       return finalize(pageHTML("Steam deals: Loot Radar", "Every Steam deal tracked by Loot Radar, sorted by biggest discount first.", "/deals") +
         dealsPageHTML(deals) + "</body></html>");
     });

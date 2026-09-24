@@ -90,6 +90,7 @@ export async function fetchLootItems(env, storeIDs) {
       deals.push({
         kind: "deal",
         key: "deal:" + id,
+        gameID: d.gameID || null,
         title: d.title || "Untitled",
         store: names[d.storeID] || "PC",
         storeID: d.storeID || "1",
@@ -204,7 +205,8 @@ export function alertDigestCaption(items) {
     if (it.kind === "deal") {
       out += "\n\n<b>" + esc(it.title) + "</b>\n" +
         "&#128293; " + it.savings + "% off · " + esc(it.store || "PC") + "\n" +
-        "<s>$" + esc(it.normal) + "</s> → <b>$" + esc(it.sale) + "</b>";
+        "<s>$" + esc(it.normal) + "</s> → <b>$" + esc(it.sale) + "</b>" +
+        (it.isNewLow ? "\n🏆 <b>lowest price ever tracked</b>" : "");
     } else {
       const meta = [it.worth ? "worth " + it.worth : "", it.ends ? "ends " + it.ends : "", it.platforms ? it.platforms : ""]
         .filter(function (x) { return !!x; }).join(" · ");
@@ -238,6 +240,106 @@ export async function wishlistTitleSet(env, email) {
   return s;
 }
 
+// ---------- Historical low tracking ----------
+// CheapShark reports each game's all-time cheapest price (cheapestPriceEver)
+// for free. We cache it in D1 (game_lows, refreshed weekly) so the 20-minute
+// poll can flag deals sitting at their lowest tracked price without extra
+// upstream calls. D1 budget: 1 batched read per poll, writes only when a
+// game's cached low is missing, stale, or beaten by a live price.
+const LOW_STALE_MS = 7 * 864e5;
+export function normPrice(p) { const n = parseFloat(p); return isFinite(n) ? n : null; }
+
+export async function getGameLows(env, gameIDs) {
+  const lows = {};
+  const ids = [...new Set((gameIDs || []).filter(Boolean))].map(String);
+  if (!ids.length || !env || !env.DB) return lows;
+  try {
+    for (let i = 0; i < ids.length; i += 100) {
+      const chunk = ids.slice(i, i + 100);
+      const q = await env.DB.prepare(
+        "SELECT game_id, low_price, low_date, checked_at FROM game_lows WHERE game_id IN (" +
+        chunk.map(() => "?").join(",") + ")").bind(...chunk).all();
+      for (const r of ((q && q.results) || [])) {
+        lows[r.game_id] = { price: r.low_price, date: r.low_date, checkedAt: r.checked_at };
+      }
+    }
+  } catch (e) {}
+  return lows;
+}
+
+async function fetchCheapSharkLow(gameID) {
+  try {
+    const res = await fetch("https://www.cheapshark.com/api/1.0/games?id=" + encodeURIComponent(gameID),
+      { headers: { "User-Agent": UA, "Accept": "application/json" } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const ce = data && data.cheapestPriceEver;
+    const p = ce ? normPrice(ce.price) : null;
+    return p == null ? null : { price: p, date: ce.date || null };
+  } catch (e) { return null; }
+}
+
+export async function refreshGameLows(env, gameIDs) {
+  const lows = await getGameLows(env, gameIDs);
+  if (!env || !env.DB) return lows;
+  const now = new Date().toISOString();
+  const need = [...new Set((gameIDs || []).filter(Boolean))].map(String).filter(id => {
+    const l = lows[id];
+    return !l || !l.checkedAt || Date.parse(l.checkedAt) < Date.now() - LOW_STALE_MS;
+  });
+  for (const id of need.slice(0, 25)) {
+    const f = await fetchCheapSharkLow(id);
+    const price = f ? f.price : -1; // -1 = upstream had no low data; don't retry for a week
+    lows[id] = { price, date: f ? f.date : null, checkedAt: now };
+    try {
+      await env.DB.prepare(
+        "INSERT INTO game_lows(game_id, low_price, low_date, checked_at) VALUES(?,?,?,?) " +
+        "ON CONFLICT(game_id) DO UPDATE SET low_price=excluded.low_price, low_date=excluded.low_date, checked_at=excluded.checked_at"
+      ).bind(id, price, f ? f.date : null, now).run();
+    } catch (e) {}
+  }
+  return lows;
+}
+
+// Tag deals sitting at (or below) their all-time low. If the live price beats
+// the cached low, record it immediately so the next poll stays accurate.
+export async function tagNewLows(env, deals) {
+  try {
+    const lows = await refreshGameLows(env, deals.map(d => d.gameID));
+    const now = new Date().toISOString();
+    for (const d of deals) {
+      if (d.kind !== "deal" || !d.gameID) continue;
+      const sale = normPrice(d.sale);
+      const l = lows[String(d.gameID)];
+      if (sale == null || !l || l.price < 0) continue;
+      if (sale <= l.price) {
+        d.isNewLow = true;
+        if (sale < l.price) {
+          try {
+            await env.DB.prepare("UPDATE game_lows SET low_price=?, low_date=?, checked_at=? WHERE game_id=?")
+              .bind(sale, Math.floor(Date.now() / 1000), now, String(d.gameID)).run();
+          } catch (e) {}
+          l.price = sale;
+        }
+      }
+    }
+  } catch (e) {}
+  return deals;
+}
+
+// Read-only: mark deals at their all-time low for page rendering (no refresh).
+export async function attachGameLows(env, deals) {
+  try {
+    const lows = await getGameLows(env, deals.map(d => d.gameID));
+    for (const d of deals) {
+      const p = normPrice(d.price);
+      const l = d.gameID ? lows[String(d.gameID)] : null;
+      if (p != null && l && l.price >= 0 && p <= l.price) d.atLow = true;
+    }
+  } catch (e) {}
+  return deals;
+}
+
 export async function pollAndAlert(env) {
   if (!env || !env.KV || !env.DB) return;
   // Sent-ledger: atomic per-user dedup. Prune at 180 days, feeds turn over far
@@ -258,6 +360,7 @@ export async function pollAndAlert(env) {
   }
   const storeIDs = Object.keys(wanted).length ? Object.keys(wanted) : DEFAULT_DEAL_STORES.slice();
   const loot = await fetchLootItems(env, storeIDs);
+  await tagNewLows(env, loot.deals);
   for (const u of users) {
     const chatId = u.telegram_chat_id ? String(u.telegram_chat_id) : null;
     if (!chatId) continue;
@@ -269,6 +372,12 @@ export async function pollAndAlert(env) {
       if (prefs.deals_mode === "wishlist") {
         const wl = await wishlistTitleSet(env, u.email);
         deals = deals.filter(d => wl[d.title.toLowerCase().trim()]);
+        // All-time lows for wishlist games alert even under the discount threshold.
+        const extra = loot.deals.filter(d => d.isNewLow && prefs.deal_stores.includes(d.storeID) &&
+          d.savings < prefs.min_discount && wl[d.title.toLowerCase().trim()]);
+        const keys = {};
+        deals.forEach(d => keys[d.key] = 1);
+        for (const d of extra) if (!keys[d.key]) deals.push(d);
       }
       items = items.concat(deals);
     }

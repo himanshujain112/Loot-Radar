@@ -51,3 +51,12 @@ CREATE TABLE IF NOT EXISTS alert_log (
   sent_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_alert_log_email ON alert_log(email);
+
+-- Historical low tracking (added 2026-09-24): CheapShark cheapestPriceEver
+-- cached per game, refreshed weekly. -1 low_price = upstream had no data.
+CREATE TABLE IF NOT EXISTS game_lows (
+  game_id TEXT PRIMARY KEY,
+  low_price REAL NOT NULL,
+  low_date INTEGER,
+  checked_at TEXT NOT NULL
+);

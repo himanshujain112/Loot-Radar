@@ -35,7 +35,7 @@ export function freebieCard(g) {
 export function dealRow(d) {
   return '<a class="dealrow" href="' + esc(d.url) + '" target="_blank" rel="noopener">' +
     (d.thumb ? '<img loading="lazy" src="' + esc(d.thumb) + '" alt="">' : "") +
-    '<span class="t"><h3>' + esc(d.title) + '</h3><span class="store">Steam</span></span>' +
+    '<span class="t"><h3>' + esc(d.title) + '</h3><span class="store">Steam' + (d.atLow ? ' · <b class="lowtag">all-time low</b>' : "") + '</span></span>' +
     '<span class="pct">-' + d.off + '%</span>' +
     '<span class="prices"><span class="old">$' + esc(d.was) + '</span><span class="new">$' + esc(d.price) + "</span></span>" +
     "</a>";
@@ -175,6 +175,7 @@ export function pageHTML(title, desc, path, headExtra) {
     ".dealrow .t{flex:1;min-width:0}" +
     ".dealrow .t h3{font-size:.98rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
     ".dealrow .t .store{font-size:.78rem;color:var(--mut)}" +
+    ".dealrow .lowtag{color:#22ff88;font-weight:700}" +
     ".dealrow .pct{background:rgba(34,255,136,.13);color:#22ff88;font-weight:800;font-size:1.05rem;padding:8px 10px;border-radius:6px;flex:none}" +
     ".dealrow .prices{text-align:right;flex:none;min-width:78px}" +
     ".dealrow .prices .old{display:block;color:var(--mut);font-size:.78rem;text-decoration:line-through}" +
@@ -403,7 +404,7 @@ export function pricingPageHTML() {
     '<div class="plan pro"><h3>Hunter <span class="badge free">Pro</span></h3>' +
     '<div class="p">$4<small> / month</small></div><div class="per">or <b>$39/yr</b> ($3.25/mo). Two months free.</div>' +
     "<ul><li>Everything in Scout</li><li>Fast Telegram alerts</li><li>Daily email digest</li>" +
-    "<li>Every freebie + every deal matching your alert settings</li><li>Wishlist price watch</li><li>Pro API access for the deals & freebies feeds</li><li>Support indie radar development</li></ul>" +
+    "<li>Every freebie + every deal matching your alert settings</li><li>Wishlist price watch</li><li>All-time low price alerts</li><li>Pro API access for the deals & freebies feeds</li><li>Support indie radar development</li></ul>" +
     '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
     '<a class="btn" href="https://checkout.dodopayments.com/buy/pdt_0No6epRAEDlFPuD8vFMT3?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">Monthly: $4/mo</a>' +
     '<a class="btn ghost" href="https://checkout.dodopayments.com/buy/pdt_0No6f9EaIF1CMH6wKBTVl?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">Yearly: $39/yr</a></div>' +
