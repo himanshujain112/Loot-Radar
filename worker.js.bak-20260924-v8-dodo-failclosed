@@ -1,0 +1,1749 @@
+// src/config.js
+var FREEBIES_URL = "https://www.gamerpower.com/api/giveaways?platform=pc&type=game&sort-by=date";
+var DEALS_URL = "https://www.cheapshark.com/api/1.0/deals?storeID=1&upperPrice=5&pageSize=30&sortBy=Savings";
+var CS_BASE = "https://www.cheapshark.com/api/1.0";
+var UA = "LootRadar/1.0 (https://radar.codemeoww.com; contact lootradar@codemeoww.com)";
+var CACHE_TTL = 900;
+var LOGO_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><path d="M56 64 L56 180 Q56 202 78 202 L178 202 Q200 202 200 180 L200 64 L128 112 Z" fill="#22ff88"/><circle cx="102" cy="152" r="20" fill="#ffffff"/><circle cx="154" cy="152" r="20" fill="#ffffff"/><circle cx="89" cy="152" r="9" fill="#0b0e14"/><circle cx="141" cy="152" r="9" fill="#0b0e14"/></svg>';
+var ACTIVE_ALERT_STORES = ["1", "2", "3", "7", "11", "13", "15", "21", "23", "25", "27", "28", "30", "35"];
+var DEFAULT_DEAL_STORES = ["1", "25", "7", "30"];
+var STORE_ALIASES = { steam: "1", gamersgate: "2", greenmangaming: "3", gog: "7", humble: "11", uplay: "13", fanatical: "15", wingamestore: "21", gamebillet: "23", epic: "25", gamesplanet: "27", gamesload: "28", indiegala: "30", dreamgame: "35" };
+var STORE_NAMES = { "1": "Steam", "2": "GamersGate", "3": "GreenManGaming", "7": "GOG", "11": "Humble Store", "13": "Uplay", "15": "Fanatical", "21": "WinGameStore", "23": "GameBillet", "25": "Epic Games Store", "27": "Gamesplanet", "28": "Gamesload", "30": "IndieGala", "35": "DreamGame" };
+var STORE_PICK_ORDER = ["1", "25", "7", "30", "2", "3", "11", "13", "15", "21", "23", "27", "28", "35"];
+
+// src/util.js
+function esc(s) {
+  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function randHex(n) {
+  const b = new Uint8Array(n);
+  crypto.getRandomValues(b);
+  return Array.from(b, (x) => ("0" + x.toString(16)).slice(-2)).join("");
+}
+function getCookie(request, name) {
+  const c = request.headers.get("Cookie") || "";
+  const m = c.match(new RegExp("(?:^|;\\s*)" + name + "=([^;]*)"));
+  return m ? decodeURIComponent(m[1]) : "";
+}
+async function sha256hex(s) {
+  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(b), function(x) {
+    return ("0" + x.toString(16)).slice(-2);
+  }).join("");
+}
+function cleanTitle(t) {
+  return String(t || "Untitled").replace(/\s+giveaway\s*$/i, "").replace(/\s*\((epic games|steam|gog|ubisoft connect|ubisoft|itch\.io|indiegala|stove|fanatical|humble bundle|humble)\)\s*$/i, "").trim() || "Untitled";
+}
+function endsMs(f) {
+  if (!f || !f.ends)
+    return 0;
+  const t = Date.parse(String(f.ends).replace(" ", "T") + "Z");
+  return isNaN(t) ? 0 : t;
+}
+function endsLabel(ms) {
+  const d = ms - Date.now();
+  if (d <= 0)
+    return "expired";
+  const days = Math.floor(d / 864e5), h = Math.floor(d % 864e5 / 36e5), m = Math.floor(d % 36e5 / 6e4);
+  return (days > 0 ? days + "d " : "") + (h > 0 || days > 0 ? h + "h " : "") + m + "m left";
+}
+function isJustDropped(g) {
+  if (!g || !g.published)
+    return false;
+  const t = Date.parse(String(g.published).replace(" ", "T") + "Z");
+  return !isNaN(t) && Date.now() - t <= 48 * 36e5;
+}
+
+// src/cache.js
+var mem = /* @__PURE__ */ new Map();
+function memGet(k) {
+  const e = mem.get(k);
+  if (!e)
+    return null;
+  if (Date.now() > e.exp) {
+    mem.delete(k);
+    return null;
+  }
+  return e.val;
+}
+function memPut(k, v, ttlSec) {
+  mem.set(k, { val: v, exp: Date.now() + ttlSec * 1e3 });
+  if (mem.size > 600)
+    mem.delete(mem.keys().next().value);
+}
+function memDel(k) {
+  mem.delete(k);
+}
+async function fetchCached(ctx, url, headers, ttlSec) {
+  const ttl = ttlSec || CACHE_TTL;
+  const mkey = "url:" + url;
+  const hit = memGet(mkey);
+  if (hit) {
+    return new Response(hit, { headers: { "Content-Type": "application/json" } });
+  }
+  const cache = caches.default;
+  const req = new Request(url, { headers });
+  let text = null;
+  const cached = await cache.match(req);
+  if (cached) {
+    text = await cached.text();
+  } else {
+    const upstream = await fetch(url, { headers });
+    if (!upstream.ok)
+      throw new Error("upstream " + upstream.status);
+    text = await upstream.text();
+    const res = new Response(text, {
+      status: upstream.status,
+      headers: { "Content-Type": upstream.headers.get("Content-Type") || "application/json" }
+    });
+    res.headers.set("Cache-Control", "public, max-age=" + ttl);
+    ctx.waitUntil(cache.put(req, res.clone()));
+  }
+  memPut(mkey, text, ttl);
+  return new Response(text, { headers: { "Content-Type": "application/json" } });
+}
+
+// src/feeds.js
+function storeUrl(d, steamAppID) {
+  const app = steamAppID || d.steamAppID;
+  if (d.storeID === "1" && app)
+    return "https://store.steampowered.com/app/" + app + "/";
+  if (app && !d.storeID)
+    return "https://store.steampowered.com/app/" + app + "/";
+  return "https://www.cheapshark.com/redirect?dealID=" + (d.dealID || "");
+}
+async function csGet(ctx, path, params, ttlSec) {
+  const qs = new URLSearchParams(params);
+  const res = await fetchCached(
+    ctx,
+    CS_BASE + path + "?" + qs.toString(),
+    { "User-Agent": UA, "Accept": "application/json" },
+    ttlSec
+  );
+  return res.json();
+}
+async function storeNameMap(ctx) {
+  try {
+    const data = await csGet(ctx, "/stores", {}, 86400);
+    const m = {};
+    for (const s of Array.isArray(data) ? data : [])
+      m[s.storeID] = s.storeName;
+    return m;
+  } catch (e) {
+    return {};
+  }
+}
+function normDeal(d, steamAppID, storeName) {
+  return {
+    title: d.title || "Untitled",
+    store: storeName || (d.storeID === "1" ? "Steam" : null),
+    storeID: d.storeID || "1",
+    price: d.salePrice || d.price || "0",
+    was: d.normalPrice || d.retailPrice || "",
+    off: Math.round(parseFloat(d.savings || "0")),
+    thumb: d.thumb || "",
+    url: storeUrl(d, steamAppID),
+    steamAppID: steamAppID || d.steamAppID || null,
+    gameID: d.gameID || null
+  };
+}
+async function apiDeals(url, ctx) {
+  const q = url.searchParams;
+  const params = { storeID: q.get("storeID") || "1" };
+  params.pageSize = String(Math.min(parseInt(q.get("pageSize") || "30", 10) || 30, 60));
+  if (q.get("pageNumber"))
+    params.pageNumber = q.get("pageNumber");
+  params.sortBy = q.get("sortBy") || "Savings";
+  params.desc = q.get("desc") || "0";
+  if (!q.get("upperPrice") && !q.get("lowerPrice") && !q.get("title") && !q.get("steamAppID"))
+    params.upperPrice = "5";
+  for (const k of [
+    "lowerPrice",
+    "upperPrice",
+    "title",
+    "exact",
+    "onSale",
+    "steamAppID",
+    "metacritic",
+    "steamRating",
+    "minimumReviewCount",
+    "steamworks",
+    "AAA"
+  ]) {
+    if (q.get(k) != null)
+      params[k] = q.get(k);
+  }
+  if (q.get("maxAge") != null) {
+    const ma = parseInt(q.get("maxAge"), 10);
+    if (!isFinite(ma) || ma < 1 || ma > 2500) {
+      const e = new Error("maxAge must be 1-2500");
+      e.status = 400;
+      throw e;
+    }
+    params.maxAge = String(ma);
+  }
+  if ((q.get("output") || "").toUpperCase() === "RSS") {
+    const qs = new URLSearchParams(params);
+    qs.delete("pageSize");
+    qs.delete("pageNumber");
+    qs.set("output", "RSS");
+    const res = await fetchCached(
+      ctx,
+      CS_BASE + "/deals?" + qs.toString(),
+      { "User-Agent": UA, "Accept": "application/rss+xml, application/xml, text/xml" },
+      900
+    );
+    const text = await res.text();
+    return new Response(text, { headers: { "Content-Type": "application/rss+xml; charset=utf-8", "Access-Control-Allow-Origin": "*" } });
+  }
+  const minSavings = q.get("minSavings") != null ? parseFloat(q.get("minSavings")) : 70;
+  const data = await csGet(ctx, "/deals", params, 900);
+  const names = await storeNameMap(ctx);
+  let items = (Array.isArray(data) ? data : []).map((d) => normDeal(d, null, names[d.storeID]));
+  if (isFinite(minSavings) && minSavings > 0)
+    items = items.filter((d) => d.off >= minSavings);
+  return { count: items.length, updated: (/* @__PURE__ */ new Date()).toISOString(), items };
+}
+async function apiDealLookup(dealID, ctx) {
+  if (!dealID) {
+    const e = new Error("missing deal id");
+    e.status = 400;
+    throw e;
+  }
+  const data = await csGet(ctx, "/deals", { id: dealID }, 900);
+  if (!data || !data.gameInfo) {
+    const e = new Error("deal not found");
+    e.status = 404;
+    throw e;
+  }
+  const g = data.gameInfo;
+  const names = await storeNameMap(ctx);
+  const cheaper = (Array.isArray(data.cheaperStores) ? data.cheaperStores : []).map((d) => normDeal({
+    title: g.name,
+    storeID: d.storeID,
+    dealID: d.dealID,
+    salePrice: d.price,
+    normalPrice: d.retailPrice,
+    savings: d.savings
+  }, d.steamAppID || g.steamAppID, names[d.storeID]));
+  return {
+    dealID,
+    title: g.name || "Untitled",
+    thumb: g.thumb || "",
+    steamAppID: g.steamAppID || null,
+    url: g.steamAppID ? "https://store.steampowered.com/app/" + g.steamAppID + "/" : null,
+    cheapestEver: (data.cheapestPrice || {}).price || null,
+    cheaperStores: cheaper
+  };
+}
+function normGameSearch(g) {
+  return {
+    gameID: g.gameID,
+    title: g.external || "Untitled",
+    cheapest: g.cheapest || "0",
+    thumb: g.thumb || "",
+    steamAppID: g.steamAppID || null,
+    url: g.steamAppID ? "https://store.steampowered.com/app/" + g.steamAppID + "/" : null,
+    details: "https://radar.codemeoww.com/api/games/" + g.gameID
+  };
+}
+async function apiGamesBulk(ids, ctx) {
+  const list = String(ids || "").split(",").map((s) => s.trim()).filter((s) => /^\d+$/.test(s));
+  if (!list.length) {
+    const e = new Error("ids must be a comma-separated list of up to 25 numeric game IDs");
+    e.status = 400;
+    throw e;
+  }
+  if (list.length > 25) {
+    const e = new Error("ids limited to 25 per request");
+    e.status = 400;
+    throw e;
+  }
+  const data = await csGet(ctx, "/games", { ids: list.join(","), format: "array" }, 3600);
+  const items = (Array.isArray(data) ? data : []).map((g) => {
+    const info = g.info || {};
+    const app = info.steamAppID || null;
+    return {
+      gameID: info.gameID,
+      title: info.title || "Untitled",
+      cheapest: (g.cheapestPriceEver || {}).price || "0",
+      thumb: info.thumb || "",
+      steamAppID: app,
+      url: app ? "https://store.steampowered.com/app/" + app + "/" : null,
+      details: "https://radar.codemeoww.com/api/games/" + info.gameID
+    };
+  });
+  return { count: items.length, items };
+}
+async function apiGameSearch(url, ctx) {
+  const q = url.searchParams;
+  if (q.get("ids") != null)
+    return apiGamesBulk(q.get("ids"), ctx);
+  const title = (q.get("title") || "").trim();
+  const steamAppID = (q.get("steamAppID") || "").trim();
+  if (!title && !steamAppID) {
+    const e = new Error("missing required query param: title or steamAppID");
+    e.status = 400;
+    throw e;
+  }
+  const params = { limit: String(Math.min(parseInt(q.get("limit") || "10", 10) || 10, 60)) };
+  if (title)
+    params.title = title;
+  if (steamAppID)
+    params.steamAppID = steamAppID;
+  if (q.get("exact"))
+    params.exact = q.get("exact");
+  const data = await csGet(ctx, "/games", params, 3600);
+  const items = (Array.isArray(data) ? data : []).map((g) => normGameSearch(g));
+  return { count: items.length, items };
+}
+async function apiGameLookup(gameID, ctx) {
+  if (!/^\d+$/.test(gameID || "")) {
+    const e = new Error("invalid game id");
+    e.status = 400;
+    throw e;
+  }
+  const data = await csGet(ctx, "/games", { id: gameID }, 3600);
+  const info = data.info || {};
+  const names = await storeNameMap(ctx);
+  const deals = (Array.isArray(data.deals) ? data.deals : []).map((d) => normDeal({
+    title: info.title,
+    storeID: d.storeID,
+    dealID: d.dealID,
+    salePrice: d.price,
+    normalPrice: d.retailPrice,
+    savings: d.savings
+  }, info.steamAppID, names[d.storeID]));
+  return {
+    gameID,
+    title: info.title || "Untitled",
+    thumb: info.thumb || "",
+    steamAppID: info.steamAppID || null,
+    url: info.steamAppID ? "https://store.steampowered.com/app/" + info.steamAppID + "/" : null,
+    cheapestEver: (data.cheapestPriceEver || {}).price || null,
+    deals
+  };
+}
+async function apiStores(url, ctx) {
+  const q = url.searchParams;
+  if (q.get("lastChange") != null) {
+    return await csGet(ctx, "/stores", { lastChange: "" }, 3600);
+  }
+  const data = await csGet(ctx, "/stores", {}, 86400);
+  const items = (Array.isArray(data) ? data : []).map((s) => ({
+    storeID: s.storeID,
+    name: s.storeName,
+    active: String(s.isActive) === "1"
+  }));
+  return { count: items.length, items };
+}
+async function getFreebies(ctx) {
+  try {
+    const res = await fetchCached(ctx, FREEBIES_URL, { "User-Agent": UA, "Accept": "application/json" });
+    const data = await res.json();
+    return (Array.isArray(data) ? data : []).slice(0, 12).map((g) => ({
+      title: cleanTitle(g.title),
+      worth: g.worth || "Free",
+      thumb: g.thumbnail || g.image || "",
+      url: g.open_giveaway_url || g.gamerpower_url || "#",
+      desc: (g.description || "").slice(0, 140),
+      platforms: g.platforms || "PC",
+      ends: g.end_date && g.end_date !== "N/A" ? g.end_date : null,
+      published: g.date_published && g.date_published !== "N/A" ? g.date_published : null
+    })).sort((a, b) => (endsMs(a) || Infinity) - (endsMs(b) || Infinity));
+  } catch (e) {
+    return [];
+  }
+}
+async function getDeals(ctx) {
+  try {
+    const res = await fetchCached(ctx, DEALS_URL, { "User-Agent": UA, "Accept": "application/json" });
+    const data = await res.json();
+    return (Array.isArray(data) ? data : []).map((d) => normDeal(d));
+  } catch (e) {
+    return [];
+  }
+}
+
+// src/auth.js
+async function sessionEmail(request, env) {
+  const sid = getCookie(request, "lr_sess");
+  if (!sid || !env || !env.KV)
+    return null;
+  const hit = memGet("sess:" + sid);
+  if (hit !== null)
+    return hit || null;
+  const s = await env.KV.get("sess:" + sid, "json");
+  const email = s && s.email || null;
+  memPut("sess:" + sid, email || "", 120);
+  return email;
+}
+async function proStatus(env, email) {
+  if (!env || !env.DB || !email)
+    return { pro: false, plan: null, telegram: false };
+  const hit = memGet("pro:" + email);
+  if (hit)
+    return hit;
+  const row = await env.DB.prepare("SELECT pro, plan, telegram_chat_id FROM customers WHERE email = ?").bind(email).first();
+  const st = { pro: !!(row && row.pro), plan: row && row.plan || null, telegram: !!(row && row.telegram_chat_id) };
+  memPut("pro:" + email, st, 120);
+  return st;
+}
+async function getWishlist(env, email) {
+  if (!env || !env.DB || !email)
+    return [];
+  const hit = memGet("wl:" + email);
+  if (hit)
+    return hit;
+  let items = [];
+  try {
+    const wq = await env.DB.prepare("SELECT title FROM wishlist WHERE email = ? ORDER BY added_at").bind(email).all();
+    items = (wq && wq.results || []).map(function(r) {
+      return r.title;
+    });
+  } catch (e) {
+  }
+  memPut("wl:" + email, items, 120);
+  return items;
+}
+function apiKeyFrom(request, url) {
+  const h = request.headers.get("X-API-Key") || request.headers.get("x-api-key") || "";
+  if (h)
+    return String(h).trim();
+  const q = url.searchParams.get("key") || url.searchParams.get("api_key") || "";
+  return String(q).trim();
+}
+var rlMap = /* @__PURE__ */ new Map();
+function rateOk(id, limit, windowSec) {
+  const now = Date.now();
+  const e = rlMap.get(id);
+  if (!e || now > e.exp) {
+    rlMap.set(id, { n: 1, exp: now + windowSec * 1e3 });
+    return true;
+  }
+  e.n++;
+  return e.n <= limit;
+}
+async function apiKeyAuth(request, env, url) {
+  const key = apiKeyFrom(request, url);
+  if (!key || key.indexOf("lr_") !== 0 || !env || !env.DB)
+    return null;
+  const hash = await sha256hex(key);
+  const hit = memGet("apikey:" + hash);
+  if (hit !== null)
+    return hit === "" ? null : hit;
+  let row = null;
+  try {
+    row = await env.DB.prepare("SELECT email, revoked FROM api_keys WHERE api_key_hash = ?").bind(hash).first();
+  } catch (e) {
+  }
+  let auth = null;
+  if (row && !row.revoked) {
+    const st = await proStatus(env, row.email);
+    if (st.pro)
+      auth = { email: row.email, hash };
+  }
+  memPut("apikey:" + hash, auth || "", 300);
+  return auth;
+}
+
+// src/payments.js
+function dodoHeader(h, names) {
+  for (const n of names) {
+    const v = h.get(n);
+    if (v)
+      return v;
+  }
+  return "";
+}
+async function verifyDodoWebhook(request, rawBody, secret) {
+  const h = request.headers;
+  const id = dodoHeader(h, ["webhook-id", "svix-id"]);
+  const ts = dodoHeader(h, ["webhook-timestamp", "svix-timestamp"]);
+  const sig = dodoHeader(h, ["webhook-signature", "svix-signature"]);
+  if (!id || !ts || !sig)
+    return { ok: false, reason: "missing signature headers" };
+  const age = Math.abs(Date.now() / 1e3 - parseInt(ts, 10));
+  if (!isFinite(age) || age > 300)
+    return { ok: false, reason: "stale timestamp" };
+  try {
+    const raw = secret.replace(/^whsec_/, "");
+    const keyBytes = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0));
+    const key = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(id + "." + ts + "." + rawBody));
+    const expected = btoa(String.fromCharCode.apply(null, new Uint8Array(mac)));
+    const ok = sig.split(" ").some((s) => {
+      const v = s.indexOf("v1,") === 0 ? s.slice(3) : s;
+      return v === expected;
+    });
+    return ok ? { ok: true } : { ok: false, reason: "signature mismatch" };
+  } catch (e) {
+    return { ok: false, reason: "verification error" };
+  }
+}
+function dodoCustomerEmail(evt) {
+  if (!evt || !evt.data)
+    return null;
+  const d = evt.data;
+  return d.customer && d.customer.email || d.customer_email || d.email || null;
+}
+
+// src/notify.js
+async function sendEmail(env, to, subject, html) {
+  const key = env && env.RESEND_API_KEY || "";
+  if (!key)
+    return { ok: false, error: "no api key" };
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + key, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: "Loot Radar <lootradar@codemeoww.com>", to: [to], subject, html })
+    });
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok, status: res.status, data };
+  } catch (e) {
+    return { ok: false, error: "fetch failed" };
+  }
+}
+async function sendTelegram(env, chatId, text, replyMarkup) {
+  const tok = env && env.TELEGRAM_BOT_TOKEN || "";
+  if (!tok)
+    return { ok: false };
+  try {
+    const body = { chat_id: chatId, text, parse_mode: "HTML", disable_web_page_preview: true };
+    if (replyMarkup)
+      body.reply_markup = replyMarkup;
+    const res = await fetch("https://api.telegram.org/bot" + tok + "/sendMessage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    return { ok: res.ok };
+  } catch (e) {
+    return { ok: false };
+  }
+}
+
+// src/emails.js
+function emailShell(inner) {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="supported-color-schemes" content="light dark"></head><body style="margin:0;padding:0;background:#0d1219;color:#e8edf2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"><table width="100%" cellpadding="0" cellspacing="0" style="background:#0d1219;padding:32px 16px"><tr><td align="center"><table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#151d29;border:1px solid #26303d;border-radius:14px"><tr><td style="padding:26px 30px 6px"><span style="color:#22ff88;font-weight:800;letter-spacing:3px;font-size:13px">LOOT RADAR</span></td></tr><tr><td style="padding:8px 30px 28px">` + inner + '</td></tr><tr><td style="padding:18px 30px;border-top:1px solid #26303d;color:#8b95a3;font-size:12px;line-height:1.7">Loot Radar \xB7 <a href="https://radar.codemeoww.com" style="color:#6cb4f5;text-decoration:none">radar.codemeoww.com</a><br>Questions? Write to <a href="mailto:lootradar@codemeoww.com" style="color:#6cb4f5;text-decoration:none">lootradar@codemeoww.com</a></td></tr></table></td></tr></table></body></html>';
+}
+function magicLinkEmail(link) {
+  return emailShell(
+    '<h1 style="margin:12px 0 10px;font-size:24px;line-height:1.25;color:#ffffff">Log in to Loot Radar</h1><p style="color:#aeb8c4;font-size:15px;line-height:1.65">Click the button below to log in. This link expires in <b style="color:#ffffff">15 minutes</b> and works only once.</p><p style="margin:26px 0"><a href="' + link + '" style="display:inline-block;background:#22ff88;color:#06281a;font-weight:800;font-size:16px;padding:14px 36px;border-radius:10px;text-decoration:none">Log in &rarr;</a></p><p style="color:#8b95a3;font-size:13px;line-height:1.6">Button not working? Paste this link into your browser:<br><span style="color:#6cb4f5;word-break:break-all">' + link + `</span></p><p style="color:#8b95a3;font-size:13px;line-height:1.6;margin-bottom:0">If you didn't request this, ignore it. No one can log in without access to your inbox.</p>`
+  );
+}
+function dailyDigestEmail(freebies, deals, wishlist) {
+  const badge = function(text, bg, color) {
+    return '<span style="display:inline-block;font-size:11px;font-weight:700;letter-spacing:.5px;padding:3px 8px;border-radius:4px;background:' + bg + ";color:" + color + ';margin:0 6px 6px 0">' + esc(text) + "</span>";
+  };
+  const card = function(it) {
+    const isDeal = it.kind === "deal";
+    const cta = isDeal ? "Get the deal &rarr;" : "Claim it &rarr;";
+    let mid;
+    if (isDeal) {
+      const priceRow = '<s style="color:#8b95a3">$' + esc(it.normal) + '</s>&nbsp;<b style="color:#ffffff">$' + esc(it.sale) + '</b>&nbsp;<span style="display:inline-block;background:rgba(34,255,136,.14);color:#22ff88;font-weight:700;font-size:12px;padding:2px 8px;border-radius:999px">-' + it.savings + "%</span>";
+      mid = (it.store ? '<div style="font-size:12px;color:#8b95a3;margin:0 0 10px;line-height:1.5">' + esc(it.store) + "</div>" : "") + '<div style="font-size:14px;margin:0 0 12px">' + priceRow + "</div>";
+    } else {
+      let badges = badge("FREE", "rgba(255,255,255,.12)", "#ffffff");
+      if (it.worth)
+        badges += badge(it.worth, "rgba(255,176,32,.12)", "#ffb020");
+      if (it.ends) {
+        let endsTxt = "ends " + it.ends;
+        const t = Date.parse(String(it.ends).replace(" ", "T") + "Z");
+        if (!isNaN(t)) {
+          const d = t - Date.now(), days = Math.floor(d / 864e5), h = Math.round(d % 864e5 / 36e5);
+          endsTxt = d <= 0 ? "ending soon" : days >= 2 ? "ends in " + days + "d" : days === 1 ? "ends tomorrow" : "ends in " + Math.max(h, 1) + "h";
+        }
+        badges += badge(endsTxt, "rgba(255,210,122,.10)", "#ffd27a");
+      }
+      mid = '<div style="margin:0 0 10px">' + badges + "</div>";
+    }
+    return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#101724;border:1px solid #26303d;border-radius:12px">' + (it.image ? '<tr><td style="padding:0;font-size:0;line-height:0"><a href="' + esc(it.url) + '"><img src="' + esc(it.image) + '" width="254" alt="' + esc(it.title) + '" style="display:block;width:100%;max-width:254px;height:auto;border-radius:11px 11px 0 0;border:0"></a></td></tr>' : "") + '<tr><td style="padding:14px 16px 16px"><div style="font-size:15px;font-weight:700;color:#ffffff;line-height:1.35;margin:0 0 8px"><a href="' + esc(it.url) + '" style="color:#ffffff;text-decoration:none">' + esc(it.title) + "</a></div>" + mid + '<a href="' + esc(it.url) + '" style="font-size:13px;font-weight:700;color:#22ff88;text-decoration:none;white-space:nowrap">' + cta + "</a></td></tr></table>";
+  };
+  const grid = function(items) {
+    let out = '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse"><tr><td style="font-size:0;line-height:0;text-align:center;padding:0">';
+    for (let i = 0; i < items.length; i += 2) {
+      const a = items[i], b = items[i + 1];
+      out += '<!--[if mso]><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="540"><tr><td width="270" valign="top"><![endif]-->';
+      out += '<div style="display:inline-block;width:100%;max-width:270px;vertical-align:top;font-size:15px;line-height:1.5;text-align:left"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:0 8px 16px">' + card(a) + "</td></tr></table></div>";
+      if (b) {
+        out += '<!--[if mso]></td><td width="270" valign="top"><![endif]-->';
+        out += '<div style="display:inline-block;width:100%;max-width:270px;vertical-align:top;font-size:15px;line-height:1.5;text-align:left"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:0 8px 16px">' + card(b) + "</td></tr></table></div>";
+      }
+      out += "<!--[if mso]></td></tr></table><![endif]-->";
+    }
+    out += "</td></tr></table>";
+    return out;
+  };
+  const wlRow = function(h) {
+    return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 12px;background:#101724;border:1px solid #26303d;border-radius:10px"><tr>' + (h.thumb ? '<td width="110" valign="top" style="padding:12px 0 12px 12px;font-size:0;line-height:0"><img src="' + esc(h.thumb) + '" width="100" alt="' + esc(h.title) + '" style="display:block;width:100%;max-width:100px;height:auto;border-radius:8px;border:0"></td>' : "") + '<td valign="top" style="padding:14px 16px"><div style="font-size:15px;font-weight:700;color:#ffffff;line-height:1.35;margin:0 0 6px">' + esc(h.title) + '</div><div style="font-size:14px;margin:0 0 10px">Best price right now: <b style="color:#ffffff">$' + esc(h.price) + '</b></div><a href="' + esc(h.url) + '" style="font-size:13px;font-weight:700;color:#22ff88;text-decoration:none;white-space:nowrap">Check the price &rarr;</a></td></tr></table>';
+  };
+  const sec = function(emoji, label, count, body) {
+    return '<div style="margin:28px 0 14px;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#8b95a3">' + emoji + " " + label + " \xB7 " + count + "</div>" + body;
+  };
+  const today = (/* @__PURE__ */ new Date()).toLocaleDateString("en-IN", { weekday: "long", month: "long", day: "numeric" });
+  let inner = `<h1 style="margin:12px 0 4px;font-size:22px;color:#ffffff">Today's loot</h1><p style="color:#8b95a3;font-size:13px;margin:0 0 6px">` + today + '</p><p style="color:#aeb8c4;font-size:14px;line-height:1.6;margin:0 0 8px">Your daily roundup: one email, everything worth grabbing.</p>';
+  if (wishlist.length)
+    inner += sec("&#127919;", "Wishlist watch", wishlist.length, wishlist.map(wlRow).join(""));
+  if (freebies.length)
+    inner += sec("&#127918;", "Free to claim", freebies.length, grid(freebies));
+  if (deals.length)
+    inner += sec("&#128293;", "Steepest PC discounts", deals.length, grid(deals));
+  if (!wishlist.length && !freebies.length && !deals.length) {
+    inner += `<p style="color:#aeb8c4;font-size:14px;line-height:1.6">Quiet day on the radar. No fresh freebies or 70%+ deals right now. Add games to your <a href="https://radar.codemeoww.com/pro" style="color:#6cb4f5">wishlist</a> and we'll watch their prices.</p>`;
+  }
+  inner += `<p style="color:#8b95a3;font-size:12px;line-height:1.6;margin-top:24px">You're getting this because you're a Loot Radar Pro member. One digest a day, nothing more.<br><a href="https://radar.codemeoww.com/pro" style="color:#6cb4f5">Manage your alerts</a> \xB7 <a href="mailto:lootradar@codemeoww.com" style="color:#6cb4f5">lootradar@codemeoww.com</a></p>`;
+  return emailShell(inner);
+}
+
+// src/alerts.js
+async function alertStoreNames() {
+  const hit = memGet("alert:storenames");
+  if (hit)
+    return hit;
+  const m = { "1": "Steam", "25": "Epic Games Store", "7": "GOG" };
+  try {
+    const res = await fetch("https://www.cheapshark.com/api/1.0/stores", { headers: { "User-Agent": UA, "Accept": "application/json" } });
+    if (res.ok) {
+      const data = await res.json();
+      for (const s of Array.isArray(data) ? data : [])
+        m[s.storeID] = s.storeName;
+    }
+  } catch (e) {
+  }
+  memPut("alert:storenames", m, 86400);
+  return m;
+}
+async function fetchLootItems(env, storeIDs) {
+  const stores = (Array.isArray(storeIDs) && storeIDs.length ? storeIDs : DEFAULT_DEAL_STORES).filter((s) => ACTIVE_ALERT_STORES.includes(s));
+  const dealKey = "loot:deals:" + stores.slice().sort().join(",");
+  const mFree = memGet("loot:freebies"), mDeals = memGet(dealKey);
+  if (mFree && mDeals)
+    return { freebies: mFree, deals: mDeals };
+  if (env && env.KV) {
+    try {
+      const kvFree = await env.KV.get("loot:freebies", "json");
+      const kvDeals = await env.KV.get(dealKey, "json");
+      if (kvFree && kvDeals) {
+        memPut("loot:freebies", kvFree, 600);
+        memPut(dealKey, kvDeals, 600);
+        return { freebies: kvFree, deals: kvDeals };
+      }
+    } catch (e) {
+    }
+  }
+  let freebies = [];
+  try {
+    const res = await fetch(FREEBIES_URL, { headers: { "User-Agent": UA, "Accept": "application/json" } });
+    if (res.ok) {
+      const data = await res.json();
+      freebies = (Array.isArray(data) ? data : []).slice(0, 12).map((g) => ({
+        kind: "free",
+        key: "free:" + String(g.title || "").toLowerCase().trim(),
+        title: cleanTitle(g.title),
+        url: g.open_giveaway_url || g.gamerpower_url || "#",
+        image: g.image || "",
+        worth: g.worth && g.worth !== "N/A" ? g.worth : "",
+        platforms: g.platforms || "",
+        ends: g.end_date && g.end_date !== "N/A" ? g.end_date : ""
+      })).filter((g) => g.key !== "free:");
+    }
+  } catch (e) {
+  }
+  let deals = [];
+  try {
+    const names = await alertStoreNames();
+    const lists = await Promise.all(stores.map(async (storeID) => {
+      try {
+        const res = await fetch(
+          "https://www.cheapshark.com/api/1.0/deals?storeID=" + storeID + "&upperPrice=5&pageSize=30&sortBy=Savings",
+          { headers: { "User-Agent": UA, "Accept": "application/json" } }
+        );
+        if (!res.ok)
+          return [];
+        const data = await res.json();
+        return Array.isArray(data) ? data : [];
+      } catch (e) {
+        return [];
+      }
+    }));
+    const seen = {};
+    for (const d of lists.flat()) {
+      const id = d.dealID || "";
+      if (!id || seen[id])
+        continue;
+      seen[id] = 1;
+      const savings = Math.round(parseFloat(d.savings) || 0);
+      if (savings < 50)
+        continue;
+      deals.push({
+        kind: "deal",
+        key: "deal:" + id,
+        title: d.title || "Untitled",
+        store: names[d.storeID] || "PC",
+        storeID: d.storeID || "1",
+        url: storeUrl(d),
+        image: d.thumb || "",
+        sale: d.salePrice || "",
+        normal: d.normalPrice || "",
+        savings
+      });
+    }
+    deals.sort((a, b) => b.savings - a.savings);
+  } catch (e) {
+  }
+  memPut("loot:freebies", freebies, 600);
+  memPut(dealKey, deals, 600);
+  if (env && env.KV) {
+    try {
+      await env.KV.put("loot:freebies", JSON.stringify(freebies), { expirationTtl: 1200 });
+      await env.KV.put(dealKey, JSON.stringify(deals), { expirationTtl: 1200 });
+    } catch (e) {
+    }
+  }
+  return { freebies, deals };
+}
+function normPrefs(row) {
+  const stores = String(row && row.deal_stores || DEFAULT_DEAL_STORES.join(",")).split(",").map((s) => s.trim()).filter((s) => ACTIVE_ALERT_STORES.includes(s));
+  const md = parseInt(row && row.min_discount, 10);
+  return {
+    alert_freebies: !row || row.alert_freebies == null ? 1 : row.alert_freebies ? 1 : 0,
+    alert_deals: !row || row.alert_deals == null ? 1 : row.alert_deals ? 1 : 0,
+    deal_stores: stores.length ? stores : DEFAULT_DEAL_STORES.slice(),
+    min_discount: isFinite(md) && md >= 50 && md <= 95 ? md : 70,
+    deals_mode: row && row.deals_mode === "wishlist" ? "wishlist" : "all",
+    digest_email: !row || row.digest_email == null ? 1 : row.digest_email ? 1 : 0
+  };
+}
+async function setPrefs(env, email, patch) {
+  const sets = [];
+  const vals = [];
+  const bad = (m) => ({ ok: false, error: m });
+  if (patch.alert_freebies !== void 0) {
+    sets.push("alert_freebies = ?");
+    vals.push(patch.alert_freebies ? 1 : 0);
+  }
+  if (patch.alert_deals !== void 0) {
+    sets.push("alert_deals = ?");
+    vals.push(patch.alert_deals ? 1 : 0);
+  }
+  if (patch.deal_stores !== void 0) {
+    const list = String(patch.deal_stores).split(",").map((s) => {
+      s = s.trim().toLowerCase();
+      return STORE_ALIASES[s] || s;
+    }).filter((s) => ACTIVE_ALERT_STORES.includes(s));
+    const uniq = [...new Set(list)];
+    if (!uniq.length)
+      return bad("pick at least one store (see /stores for the list)");
+    sets.push("deal_stores = ?");
+    vals.push(uniq.join(","));
+  }
+  if (patch.min_discount !== void 0) {
+    const n = parseInt(patch.min_discount, 10);
+    if (!isFinite(n) || n < 50 || n > 95)
+      return bad("min discount must be 50-95");
+    sets.push("min_discount = ?");
+    vals.push(n);
+  }
+  if (patch.deals_mode !== void 0) {
+    const m = String(patch.deals_mode).toLowerCase();
+    if (m !== "all" && m !== "wishlist")
+      return bad("mode must be all or wishlist");
+    sets.push("deals_mode = ?");
+    vals.push(m);
+  }
+  if (patch.digest_email !== void 0) {
+    sets.push("digest_email = ?");
+    vals.push(patch.digest_email ? 1 : 0);
+  }
+  if (!sets.length)
+    return bad("nothing to change");
+  sets.push("updated_at = ?");
+  vals.push((/* @__PURE__ */ new Date()).toISOString());
+  vals.push(email);
+  try {
+    await env.DB.prepare("UPDATE customers SET " + sets.join(", ") + " WHERE email = ?").bind(...vals).run();
+    return { ok: true };
+  } catch (e) {
+    return bad("couldn't save, try again");
+  }
+}
+function prefsSummary(p) {
+  const stores = p.deal_stores.map((id) => STORE_NAMES[id]).join(", ");
+  return "\u{1F3AE} <b>Your alert settings</b>\n\nFree games: <b>" + (p.alert_freebies ? "on" : "off") + "</b>\nDiscounts: <b>" + (p.alert_deals ? "on" : "off") + "</b>\nStores: <b>" + stores + "</b>\nMin. discount: <b>" + p.min_discount + "%</b>\nDiscount mode: <b>" + (p.deals_mode === "wishlist" ? "wishlist only" : "all deals") + "</b>\n\nChange them with /help, or anytime at radar.codemeoww.com/pro";
+}
+async function claimItem(env, chatId, it) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  try {
+    const r = await env.DB.prepare("INSERT OR IGNORE INTO sent_alerts (chat_id, item_key, sent_at) VALUES (?,?,?)").bind(String(chatId), it.key, now).run();
+    return !!(r && r.meta && r.meta.changes > 0);
+  } catch (e) {
+    return false;
+  }
+}
+async function releaseClaim(env, chatId, it) {
+  try {
+    await env.DB.prepare("DELETE FROM sent_alerts WHERE chat_id=? AND item_key=?").bind(String(chatId), it.key).run();
+  } catch (e) {
+  }
+}
+function alertDigestCaption(items) {
+  const n = items.length;
+  let out = "\u{1F3AE} <b>Loot Radar: " + n + " new drop" + (n === 1 ? "" : "s") + "</b>";
+  for (const it of items) {
+    if (it.kind === "deal") {
+      out += "\n\n<b>" + esc(it.title) + "</b>\n&#128293; " + it.savings + "% off \xB7 " + esc(it.store || "PC") + "\n<s>$" + esc(it.normal) + "</s> \u2192 <b>$" + esc(it.sale) + "</b>";
+    } else {
+      const meta = [it.worth ? "worth " + it.worth : "", it.ends ? "ends " + it.ends : "", it.platforms ? it.platforms : ""].filter(function(x) {
+        return !!x;
+      }).join(" \xB7 ");
+      out += "\n\n<b>" + esc(it.title) + "</b>\n&#127918; <b>FREE</b>" + (meta ? " \xB7 " + esc(meta) : "");
+    }
+  }
+  return out;
+}
+function alertButtons(items) {
+  const rows = [];
+  for (const it of items) {
+    let label = String(it.title || "View deal");
+    if (label.length > 24)
+      label = label.slice(0, 23) + "\u2026";
+    const emoji = it.kind === "deal" ? "\u{1F525} " : "\u{1F381} ";
+    rows.push([{ text: emoji + label + " \u2192", url: it.url }]);
+  }
+  rows.push([{ text: "\u{1F310} Browse all on Loot Radar", url: "https://radar.codemeoww.com/deals" }]);
+  return { inline_keyboard: rows };
+}
+async function wishlistTitleSet(env, email) {
+  const s = {};
+  try {
+    const q = await env.DB.prepare("SELECT title FROM wishlist WHERE email = ?").bind(email).all();
+    for (const r of q && q.results || [])
+      s[String(r.title || "").toLowerCase().trim()] = 1;
+  } catch (e) {
+  }
+  return s;
+}
+async function pollAndAlert(env) {
+  if (!env || !env.KV || !env.DB)
+    return;
+  try {
+    await env.DB.prepare("DELETE FROM sent_alerts WHERE sent_at < datetime('now','-180 days')").run();
+  } catch (e) {
+  }
+  let users = [];
+  try {
+    const q = await env.DB.prepare("SELECT email, telegram_chat_id, alert_freebies, alert_deals, deal_stores, min_discount, deals_mode FROM customers WHERE pro = 1").all();
+    users = q && q.results || [];
+  } catch (e) {
+    return;
+  }
+  const wanted = {};
+  for (const u of users) {
+    if (!u.telegram_chat_id)
+      continue;
+    const p = normPrefs(u);
+    if (p.alert_deals)
+      for (const s of p.deal_stores)
+        wanted[s] = 1;
+  }
+  const storeIDs = Object.keys(wanted).length ? Object.keys(wanted) : DEFAULT_DEAL_STORES.slice();
+  const loot = await fetchLootItems(env, storeIDs);
+  for (const u of users) {
+    const chatId = u.telegram_chat_id ? String(u.telegram_chat_id) : null;
+    if (!chatId)
+      continue;
+    const prefs = normPrefs(u);
+    let items = [];
+    if (prefs.alert_freebies)
+      items = items.concat(loot.freebies);
+    if (prefs.alert_deals) {
+      let deals = loot.deals.filter((d) => prefs.deal_stores.includes(d.storeID) && d.savings >= prefs.min_discount);
+      if (prefs.deals_mode === "wishlist") {
+        const wl = await wishlistTitleSet(env, u.email);
+        deals = deals.filter((d) => wl[d.title.toLowerCase().trim()]);
+      }
+      items = items.concat(deals);
+    }
+    if (!items.length)
+      continue;
+    const fresh = [];
+    for (const it of items) {
+      if (fresh.length >= 8)
+        break;
+      if (await claimItem(env, chatId, it))
+        fresh.push(it);
+    }
+    if (!fresh.length)
+      continue;
+    const ok = await sendTelegram(env, chatId, alertDigestCaption(fresh), alertButtons(fresh));
+    if (!ok)
+      for (const it of fresh)
+        await releaseClaim(env, chatId, it);
+  }
+}
+async function handleTelegramCommand(env, chatId, text) {
+  const parts = text.trim().split(/\s+/);
+  const cmd = (parts[0] || "").toLowerCase().split("@")[0];
+  const args = parts.slice(1);
+  let cust = null;
+  try {
+    const q = await env.DB.prepare("SELECT email, pro, alert_freebies, alert_deals, deal_stores, min_discount, deals_mode FROM customers WHERE telegram_chat_id = ?").bind(String(chatId)).all();
+    cust = q && q.results && q.results[0] || null;
+  } catch (e) {
+  }
+  if (!cust) {
+    return "\u{1F44B} Link your Loot Radar Pro account first: log in at https://radar.codemeoww.com/login and tap <b>Connect Telegram</b> in your dashboard.";
+  }
+  if (!cust.pro) {
+    return "Alerts need Loot Radar Pro. Grab it at https://radar.codemeoww.com/pricing";
+  }
+  const save = async (patch) => {
+    const r = await setPrefs(env, cust.email, patch);
+    if (!r.ok)
+      return "\u26A0\uFE0F " + esc(r.error);
+    let row = null;
+    try {
+      const q = await env.DB.prepare("SELECT alert_freebies, alert_deals, deal_stores, min_discount, deals_mode FROM customers WHERE email = ?").bind(cust.email).all();
+      row = q && q.results && q.results[0] || null;
+    } catch (e) {
+    }
+    return prefsSummary(normPrefs(row));
+  };
+  switch (cmd) {
+    case "/prefs":
+      return prefsSummary(normPrefs(cust));
+    case "/help":
+      return "\u{1F3AE} <b>Loot Radar commands</b>\n\n/prefs: show your alert settings\n/freebies on|off: free game alerts\n/deals on|off: discount alerts\n/stores: show/change deal stores\n/minoff 70: minimum discount %, 50-95\n/mode all|wishlist: all deals, or wishlist games only\n/unlink: disconnect this Telegram account";
+    case "/freebies":
+      if (!/^(on|off)$/i.test(args[0] || ""))
+        return "Usage: /freebies on  or  /freebies off";
+      return save({ alert_freebies: /^on$/i.test(args[0]) });
+    case "/deals":
+      if (!/^(on|off)$/i.test(args[0] || ""))
+        return "Usage: /deals on  or  /deals off";
+      return save({ alert_deals: /^on$/i.test(args[0]) });
+    case "/stores":
+      if (!args.length) {
+        const aliasOf = {};
+        for (const a of Object.keys(STORE_ALIASES))
+          aliasOf[STORE_ALIASES[a]] = a;
+        const list = STORE_PICK_ORDER.map((id) => "\u2022 " + STORE_NAMES[id] + "  (<code>" + aliasOf[id] + "</code>)").join("\n");
+        return "\u{1F3EA} <b>Available stores</b>\n\n" + list + "\n\nYour stores: <b>" + normPrefs(cust).deal_stores.map((id) => STORE_NAMES[id]).join(", ") + "</b>\nChange with: <code>/stores steam epic</code>  or  <code>/stores all</code>";
+      }
+      if (/^all$/i.test(args[0]))
+        return save({ deal_stores: ACTIVE_ALERT_STORES.join(",") });
+      return save({ deal_stores: args.join(",") });
+    case "/unlink":
+      try {
+        await env.DB.prepare("UPDATE customers SET telegram_chat_id = NULL, updated_at = ? WHERE email = ?").bind((/* @__PURE__ */ new Date()).toISOString(), cust.email).run();
+      } catch (e) {
+        return "\u26A0\uFE0F couldn't disconnect, try again";
+      }
+      return "\u{1F4F4} Telegram disconnected. Link a different account anytime from radar.codemeoww.com/pro";
+    case "/minoff":
+      if (!args[0])
+        return "Usage: /minoff 70  (50-95)";
+      return save({ min_discount: args[0] });
+    case "/mode":
+      if (!/^(all|wishlist)$/i.test(args[0] || ""))
+        return "Usage: /mode all  or  /mode wishlist";
+      return save({ deals_mode: args[0].toLowerCase() });
+    default:
+      return null;
+  }
+}
+async function checkWishlistPrice(title) {
+  const key = "wlprice:" + String(title).toLowerCase().trim();
+  const hit = memGet(key);
+  if (hit !== null)
+    return hit || null;
+  let out = null;
+  try {
+    const res = await fetch("https://www.cheapshark.com/api/1.0/games?title=" + encodeURIComponent(title) + "&limit=1", { headers: { "User-Agent": UA, "Accept": "application/json" } });
+    if (res.ok) {
+      const data = await res.json();
+      const g = Array.isArray(data) && data[0] || null;
+      if (g && g.cheapestDealID) {
+        const steam = g.steamAppID ? "https://store.steampowered.com/app/" + g.steamAppID + "/" : null;
+        out = { title: g.external || title, price: g.cheapest || "?", url: steam || "https://www.cheapshark.com/redirect?dealID=" + g.cheapestDealID, thumb: g.thumb || "" };
+      }
+    }
+  } catch (e) {
+  }
+  memPut(key, out || "", 600);
+  return out;
+}
+async function sendDailyDigest(env) {
+  if (!env || !env.DB || !env.KV)
+    return;
+  const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  let users = [];
+  try {
+    const q = await env.DB.prepare("SELECT email FROM customers WHERE pro = 1 AND (digest_email IS NULL OR digest_email = 1)").all();
+    users = q && q.results || [];
+  } catch (e) {
+    return;
+  }
+  if (!users.length)
+    return;
+  const loot = await fetchLootItems(env);
+  const freebies = loot.freebies.slice(0, 8);
+  const deals = loot.deals.filter((d) => d.savings >= 70).slice(0, 8);
+  for (const u of users) {
+    const email = u.email;
+    if (!email)
+      continue;
+    try {
+      const done = await env.KV.get("dailydigest:" + today + ":" + email);
+      if (done)
+        continue;
+      let wl = [];
+      try {
+        const wq = await env.DB.prepare("SELECT title FROM wishlist WHERE email = ? ORDER BY added_at").bind(email).all();
+        wl = wq && wq.results || [];
+      } catch (e) {
+      }
+      const hits = [];
+      const list = wl.slice(0, 20);
+      for (let i = 0; i < list.length; i++) {
+        const h = await checkWishlistPrice(list[i].title);
+        if (h)
+          hits.push(h);
+      }
+      const n = freebies.length + deals.length + hits.length;
+      await sendEmail(env, email, "Today's loot: " + n + " finds on your radar", dailyDigestEmail(freebies, deals, hits));
+      await env.KV.put("dailydigest:" + today + ":" + email, "1", { expirationTtl: 172800 });
+    } catch (e) {
+    }
+  }
+}
+
+// src/pages.js
+var COUNTDOWN_JS = "<script>(function(){function fmt(ms){if(ms<=0)return'expired';var d=Math.floor(ms/864e5),h=Math.floor(ms%864e5/36e5),m=Math.floor(ms%36e5/6e4);return(d>0?d+'d ':'')+((h>0||d>0)?h+'h ':'')+m+'m left';}function tick(){var now=Date.now();var bs=document.querySelectorAll('[data-ends]');for(var i=0;i<bs.length;i++){bs[i].textContent=fmt(Date.parse(bs[i].getAttribute('data-ends'))-now);}var s=document.querySelector('[data-sweep]');if(s){var n=new Date();var nx=new Date(n);nx.setSeconds(0,0);nx.setMinutes(Math.ceil(n.getMinutes()/20)*20);if(nx<=n)nx.setMinutes(nx.getMinutes()+20);var mm=Math.max(1,Math.round((nx-n)/6e4));s.textContent='next sweep in ~'+mm+' min';}}tick();setInterval(tick,30000);})();<\/script>";
+function freebieCard(g) {
+  const ms = endsMs(g);
+  const left = ms - Date.now();
+  const showEnds = ms && left > 0;
+  const urg = showEnds && left <= 24 * 36e5 ? " crit" : showEnds && left <= 72 * 36e5 ? " soon" : "";
+  const fresh = isJustDropped(g);
+  let meta = "";
+  if (fresh)
+    meta += '<span class="fresh">just dropped</span>';
+  if (g.worth && g.worth !== "N/A")
+    meta += (meta ? " \xB7 " : "") + '<span class="worth">worth ' + esc(g.worth) + "</span>";
+  if (showEnds)
+    meta += (meta ? " \xB7 " : "") + '<span class="ends' + urg + '" data-ends="' + new Date(ms).toISOString() + '">' + endsLabel(ms) + "</span>";
+  return '<article class="card"><div class="thumbwrap">' + (g.thumb ? '<img class="thumb" loading="lazy" src="' + esc(g.thumb) + '" alt="' + esc(g.title) + '">' : "") + '<span class="freetag">Free</span></div><div class="card-body"><h3>' + esc(g.title) + "</h3>" + (meta ? '<p class="fmeta">' + meta + "</p>" : "") + '<div class="card-foot"><span class="plat">' + esc(g.platforms) + '</span><a class="btn small" href="' + esc(g.url) + '" target="_blank" rel="noopener">Claim</a></div></div></article>';
+}
+function dealRow(d) {
+  return '<a class="dealrow" href="' + esc(d.url) + '" target="_blank" rel="noopener">' + (d.thumb ? '<img loading="lazy" src="' + esc(d.thumb) + '" alt="">' : "") + '<span class="t"><h3>' + esc(d.title) + '</h3><span class="store">Steam</span></span><span class="pct">-' + d.off + '%</span><span class="prices"><span class="old">$' + esc(d.was) + '</span><span class="new">$' + esc(d.price) + "</span></span></a>";
+}
+function jsonLD(freebies) {
+  const data = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        name: "Loot Radar",
+        url: "https://radar.codemeoww.com/",
+        description: "Loot Radar tracks Steam's steepest discounts and every free-to-claim PC game, and pings Pro members fast when new loot drops."
+      },
+      {
+        "@type": "ItemList",
+        name: "Free PC games right now",
+        itemListElement: freebies.slice(0, 10).map((g, i) => ({
+          "@type": "ListItem",
+          position: i + 1,
+          name: g.title,
+          url: g.url
+        }))
+      }
+    ]
+  };
+  return '<script type="application/ld+json">' + JSON.stringify(data).replace(/</g, "\\u003c") + "<\/script>";
+}
+function pageHTML(title, desc, path, headExtra) {
+  title = title || "Loot Radar: Steam deals & free PC games";
+  desc = desc || "Loot Radar tracks Steam's steepest discounts and every free-to-claim PC game. Pro members get pinged fast when new loot drops.";
+  path = path || "/";
+  return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' + esc(title) + '</title><meta name="description" content="' + esc(desc) + '"><link rel="canonical" href="https://radar.codemeoww.com' + esc(path) + '"><meta property="og:type" content="website"><meta property="og:site_name" content="Loot Radar"><meta property="og:url" content="https://radar.codemeoww.com' + esc(path) + '"><meta property="og:title" content="' + esc(title) + '"><meta property="og:description" content="' + esc(desc) + '"><meta name="twitter:card" content="summary"><meta name="twitter:title" content="' + esc(title) + '"><meta name="twitter:description" content="' + esc(desc) + `"><meta property="og:image" content="https://radar.codemeoww.com/logo.svg"><meta name="twitter:image" content="https://radar.codemeoww.com/logo.svg"><meta name="theme-color" content="#0b0e0c"><link rel="icon" href="/logo.svg" type="image/svg+xml"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="dns-prefetch" href="https://www.gamerpower.com"><link rel="dns-prefetch" href="https://shared.fastly.steamstatic.com"><link rel="dns-prefetch" href="https://www.clarity.ms"><script type="text/javascript">(function(c,l,a,r,i,t,y){c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);})(window,document,"clarity","script","ym06hlfz88");<\/script><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>:root{--bg:#0b0e0c;--panel:#121614;--line:rgba(255,255,255,.08);--txt:#e8f0ea;--mut:#8a978e;--grn:#22ff88;--gold:#ffb020;--red:#ff5d5d}*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg);color:var(--txt);font-family:Inter,system-ui,-apple-system,sans-serif;line-height:1.6}h1,h2,h3,.grotesk{font-family:'Space Grotesk',Inter,system-ui,sans-serif}.wrap{max-width:1080px;margin:0 auto;padding:0 22px}a{color:inherit}nav{position:sticky;top:0;z-index:50;background:#0b0e0c;border-bottom:1px solid var(--line)}.nav-in{display:flex;align-items:center;justify-content:space-between;height:58px}.logo{font-weight:700;font-size:1.05rem;text-decoration:none;display:flex;align-items:center;gap:9px}.logo b{color:var(--grn)}.nav-links{display:flex;gap:2px;align-items:center}.nav-links a.nl{text-decoration:none;color:var(--mut);font-size:.9rem;font-weight:500;padding:8px 12px;border-radius:6px}.nav-links a.nl:hover{color:var(--txt);background:rgba(255,255,255,.05)}.nav-links a.nl.active{color:var(--txt);background:rgba(255,255,255,.07)}.nav-links .spacer{width:10px}.mnav{display:none}@media(max-width:900px){.nav-links a.nl{padding:8px 8px;font-size:.85rem}}@media(max-width:720px){.nav-links a.nl{display:none}.nav-links a.nl.keep{display:inline-block;color:#fff}}.btn{display:inline-block;background:var(--grn);color:#04120a;font-weight:700;text-decoration:none;padding:11px 20px;border-radius:6px;font-size:.93rem;border:0;cursor:pointer}.btn:hover{background:#5cff9f}.btn.ghost{background:transparent;color:var(--txt);border:1px solid var(--line)}.btn.ghost:hover{border-color:rgba(255,255,255,.35);color:#fff;background:transparent}.btn.small{padding:8px 14px;font-size:.83rem}.btn.disabled{background:#1a2440;color:var(--mut);cursor:not-allowed}.dash-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px;max-width:640px;margin:16px auto 0;text-align:left}.dash-card h3{font-size:1.05rem;margin-bottom:2px}.dash-sub{color:var(--mut);font-size:.88rem;margin:0 0 16px}.dash-sec{font-size:.74rem;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--mut);margin:20px 0 10px}.pref-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 0;border-top:1px solid var(--line)}.pref-row:first-of-type{border-top:0}.pref-t{font-size:.92rem;font-weight:600}.pref-d{font-size:.82rem;color:var(--mut);margin-top:2px;max-width:26rem}.tg{position:relative;display:inline-block;width:44px;height:25px;flex:none;cursor:pointer}.tg input{opacity:0;width:0;height:0}.tg .tr{position:absolute;inset:0;background:#242b25;border:1px solid var(--line);border-radius:999px;transition:.18s}.tg .tr:before{content:"";position:absolute;width:17px;height:17px;left:3px;top:3px;background:#8a978e;border-radius:50%;transition:.18s}.tg input:checked+.tr{background:rgba(34,255,136,.22);border-color:var(--grn)}.tg input:checked+.tr:before{transform:translateX(19px);background:var(--grn)}.chips{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 4px}.chip{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--txt);border-radius:999px;padding:5px 6px 5px 13px;font-size:.84rem}.chip button{background:none;border:0;color:var(--mut);font-size:1rem;line-height:1;cursor:pointer;padding:0 6px 0 0}.chip button:hover{color:var(--red)}.combo{position:relative}.combo input{width:100%;background:#0b0e0c;border:1px solid var(--line);border-radius:8px;color:var(--txt);padding:10px 12px;font-size:.9rem;font-family:inherit}.combo input:focus{outline:none;border-color:rgba(255,255,255,.35)}.combo-drop{position:absolute;top:calc(100% + 6px);left:0;right:0;background:#141917;border:1px solid var(--line);border-radius:8px;max-height:220px;overflow:auto;z-index:20;display:none;box-shadow:0 12px 32px rgba(0,0,0,.5)}.combo-drop.open{display:block}.combo-opt{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:0;color:var(--txt);padding:10px 12px;font-size:.9rem;cursor:pointer;font-family:inherit}.combo-opt:hover{background:rgba(255,255,255,.05)}.combo-opt img{width:46px;height:26px;object-fit:cover;border-radius:4px;background:#0a0d0a;flex:none}.combo-opt .pr{margin-left:auto;color:var(--txt);font-size:.82rem;flex:none}.combo-empty{padding:12px;color:var(--mut);font-size:.86rem}.wl-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;background:#0d100d}.wl-row .t{font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wl-row button{background:none;border:0;color:var(--mut);font-size:1.2rem;cursor:pointer;line-height:1;flex:none;padding:2px 4px}.wl-row button:hover{color:var(--red)}.fld{background:#0b0e0c;border:1px solid var(--line);border-radius:8px;color:var(--txt);padding:10px 12px;font-size:.9rem;font-family:inherit}.fld:focus{outline:none;border-color:rgba(255,255,255,.35)}.hero{padding:42px 0 4px}.overline{font-size:.74rem;font-weight:700;letter-spacing:2.2px;text-transform:uppercase;color:var(--mut)}.hero h1{font-size:clamp(1.9rem,4.4vw,2.7rem);line-height:1.12;letter-spacing:-.5px;margin:10px 0 12px;max-width:22em}.hero p.sub{color:var(--mut);font-size:1.02rem;max-width:38rem;margin-bottom:22px}.hero-cta{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px}.pagehead{padding:36px 0 2px}.pagehead h1{font-size:clamp(1.6rem,3.6vw,2.2rem);letter-spacing:-.5px;margin:10px 0 10px}.pagehead p{color:var(--mut);max-width:42rem}.sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:14px;flex-wrap:wrap;row-gap:6px;margin:32px 0 14px}.sec-head h2{font-size:.92rem;font-weight:700;letter-spacing:2px;text-transform:uppercase}a.more{font-size:.85rem;color:var(--mut);text-decoration:none;white-space:nowrap}a.more:hover{color:var(--txt)}.sec-sub{color:var(--mut);margin:0 0 18px;max-width:44rem;font-size:.95rem}.dealrows{display:flex;flex-direction:column;gap:8px}.dealrow{display:flex;align-items:center;gap:14px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 16px 8px 8px;text-decoration:none}.dealrow:hover{border-color:rgba(255,255,255,.16);background:#161c17}.dealrow img{width:140px;aspect-ratio:16/7;object-fit:cover;border-radius:4px;background:#0a0d0a;flex:none}.dealrow .t{flex:1;min-width:0}.dealrow .t h3{font-size:.98rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.dealrow .t .store{font-size:.78rem;color:var(--mut)}.dealrow .pct{background:rgba(34,255,136,.13);color:#22ff88;font-weight:800;font-size:1.05rem;padding:8px 10px;border-radius:6px;flex:none}.dealrow .prices{text-align:right;flex:none;min-width:78px}.dealrow .prices .old{display:block;color:var(--mut);font-size:.78rem;text-decoration:line-through}.dealrow .prices .new{color:#fff;font-weight:800;font-size:1.15rem}@media(max-width:560px){.dealrow{flex-wrap:wrap;gap:10px;padding:10px}.dealrow img{width:88px}.dealrow .t{flex:1 1 calc(100% - 98px);min-width:0}.dealrow .t h3{white-space:normal;font-size:.9rem;line-height:1.35;overflow:hidden;max-height:2.7em;overflow-wrap:break-word;text-overflow:clip}.dealrow .pct{font-size:.88rem;padding:6px 9px;margin-left:98px}.dealrow .prices{min-width:0;display:flex;align-items:baseline;gap:8px;text-align:left}}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;display:flex;flex-direction:column}.card:hover{border-color:rgba(255,255,255,.16)}.thumb{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;background:#0a0d0a}.thumbwrap{position:relative}.freetag{position:absolute;top:10px;left:10px;background:#fff;color:#0b0e14;font-size:.68rem;font-weight:800;letter-spacing:1px;padding:4px 10px;border-radius:6px;text-transform:uppercase;box-shadow:0 2px 10px rgba(0,0,0,.45)}.fmeta{font-size:.8rem;color:var(--mut);margin:0}.fmeta .worth{color:var(--gold)}.fmeta .fresh{color:#22ff88;font-weight:700}.fmeta .ends{font-variant-numeric:tabular-nums}.fmeta .ends.soon{color:#ffb020;font-weight:700}.fmeta .ends.crit{color:#ff8a8a;font-weight:700;animation:lrblink 1.4s infinite}.card-body{padding:14px 16px 16px;display:flex;flex-direction:column;gap:8px;flex:1}.card h3{font-size:.98rem;line-height:1.35;font-weight:600}.desc{font-size:.85rem;color:var(--mut)}.badges{display:flex;gap:6px;flex-wrap:wrap}.badge{font-size:.68rem;font-weight:700;letter-spacing:1px;padding:3px 8px;border-radius:4px;text-transform:uppercase}.badge.free{background:rgba(255,255,255,.12);color:#fff}.badge.worth{background:rgba(255,176,32,.12);color:var(--gold)}.badge.deal{background:rgba(255,93,93,.12);color:var(--red)}.badge.ends{background:rgba(255,176,32,.10);color:#ffd27a;font-variant-numeric:tabular-nums}.badge.ends.soon{background:rgba(255,176,32,.18);color:#ffb020}.badge.ends.crit{background:rgba(255,93,93,.16);color:#ff8a8a;animation:lrblink 1.4s infinite}@keyframes lrblink{50%{opacity:.5}}.badge.new{background:rgba(34,255,136,.14);color:#22ff88}.sec-head.urgent h2{color:#ff8a8a}.hero-urgency{margin:4px 0 26px;color:var(--mut);font-size:.92rem}.hero-urgency b{color:#ff8a8a}.card-foot{margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:10px;padding-top:4px}.plat{font-size:.78rem;color:var(--mut)}.price s{color:var(--mut);font-size:.85rem;margin-right:6px}.price b{color:#fff;font-size:1.02rem}.empty{color:var(--mut);padding:24px;border:1px dashed var(--line);border-radius:8px;text-align:center}.srcattr{text-align:center;color:var(--mut);font-size:.75rem;margin:26px 0 0}.srcattr a{color:var(--mut);text-decoration:none}.divider{height:1px;background:var(--line);margin:6px 0}.plans{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:840px;margin:26px auto 0}@media(max-width:700px){.plans{grid-template-columns:1fr}}.plan{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:28px}.plan.pro{border-color:rgba(34,255,136,.45)}.plan h3{font-size:1.1rem;margin-bottom:4px;display:flex;align-items:center;gap:10px}.plan .p{font-family:'Space Grotesk';font-size:2.2rem;font-weight:700;margin:10px 0 2px}.plan .p small{font-size:.9rem;color:var(--mut);font-family:Inter;font-weight:400}.plan .per{color:var(--mut);font-size:.87rem}.plan ul{list-style:none;margin:16px 0 22px;display:grid;gap:9px}.plan li{font-size:.92rem;color:var(--mut);padding-left:24px;position:relative}.plan li::before{content:"\u2713";position:absolute;left:0;color:var(--txt);font-weight:700}.plan li.no{opacity:.5}.plan li.no::before{content:"\u2013";color:var(--mut)}.plan .fine{margin-top:14px;font-size:.8rem;color:var(--mut)}.home-plans{margin:18px auto 8px}.faqwrap{max-width:760px;margin-top:22px}.home-faq{margin:16px auto 0}details{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px 18px;margin-bottom:10px}summary{cursor:pointer;font-weight:600;font-size:.95rem}details p{color:var(--mut);font-size:.9rem;margin-top:8px}details a{color:var(--txt);text-decoration:underline;text-decoration-color:rgba(255,255,255,.35);text-underline-offset:2px}details a:hover{text-decoration-color:var(--txt)}.legal{max-width:780px;margin-top:20px}.legal h2{font-size:1.08rem;margin:28px 0 8px}.legal p,.legal li{color:var(--mut);font-size:.93rem;margin-bottom:10px}.legal ul,.legal ol{margin:8px 0 14px 22px}.legal strong{color:var(--txt)}.legal a{color:var(--txt);text-decoration:underline;text-decoration-color:rgba(255,255,255,.35);text-underline-offset:2px}.legal a:hover{text-decoration-color:var(--txt)}code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.85em;background:#161c17;border:1px solid var(--line);border-radius:4px;padding:2px 6px}pre{background:#0d100d;border:1px solid var(--line);border-radius:8px;padding:16px;overflow:auto;font-size:.82rem;margin:12px 0;line-height:1.55}pre code{background:none;border:0;padding:0;font-size:1em;color:#c9d4cc}.keybox{display:flex;align-items:center;gap:10px;background:#0d100d;border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin:12px 0;flex-wrap:wrap}.keybox code{font-size:.95rem;word-break:break-all}.apikey-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:6px;margin-bottom:8px;background:#0d100d;font-size:.9rem}.field{flex:1;min-width:220px;padding:12px 14px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-size:.95rem}.field:focus{outline:none;border-color:rgba(255,255,255,.35)}footer{border-top:1px solid var(--line);padding:30px 0;margin-top:44px;color:var(--mut);font-size:.86rem}.foot-in{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center}.foot-links{display:flex;gap:18px;flex-wrap:wrap}.foot-base{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:20px;padding-top:16px;border-top:1px solid var(--line);font-size:.78rem}footer a{color:var(--mut);text-decoration:none}footer a:hover{color:var(--txt)}.prices,.p,.hero-meta,.pct,.hero .sub b{font-variant-numeric:tabular-nums}</style>` + (headExtra || "") + "</head><body>";
+}
+function navHTML(active) {
+  function nl(path, label) {
+    return '<a class="nl' + (active === path ? " active" : "") + '" href="' + path + '">' + label + "</a>";
+  }
+  function mnl(path, label) {
+    return '<a class="' + (active === path ? "on" : "") + '" href="' + path + '">' + label + "</a>";
+  }
+  return '<nav><div class="wrap nav-in"><a class="logo grotesk" href="/"><img src="/logo.svg" width="24" height="24" alt="Loot Radar logo" style="border-radius:6px"><span>Loot<b>Radar</b></span></a><div class="nav-links">' + nl("/", "Home") + nl("/deals", "Deals") + nl("/freebies", "Freebies") + nl("/faq", "FAQ") + `<span class="spacer"></span><a class="nl keep" id="nav_login" href="/login">Log in</a><a class="btn small" id="nav_gopro" href="/pricing">Go Pro</a></div></div></nav><script>(function(){fetch('/api/auth/me').then(function(r){return r.json();}).then(function(d){if(d&&d.email){var li=document.getElementById('nav_login');if(li)li.outerHTML='<a class="nl keep" id="nav_dash" href="/pro">Dashboard</a>';var gp=document.getElementById('nav_gopro');if(gp)gp.remove();}}).catch(function(){});})();<\/script>`;
+}
+function footHTML() {
+  return '<footer><div class="wrap foot-in"><span class="grotesk"><img src="/logo.svg" width="18" height="18" alt="Loot Radar logo" style="vertical-align:-3px;margin-right:8px;border-radius:4px">Loot<b style="color:var(--grn)">Radar</b></span><span class="foot-links"><a href="/pricing">Pricing</a><a href="/about">About</a><a href="/api/docs">API</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/refunds">Refunds</a><a href="mailto:lootradar@codemeoww.com">Support</a></span></div><div class="wrap foot-base"><span>\xA9 2026 Loot Radar</span><span>Built &amp; run by Muse AI.</span></div></footer>';
+}
+function homeHTML(freebies, deals) {
+  const topDeals = deals.slice(0, 8);
+  const nowMs = Date.now();
+  const urgent = freebies.filter((f) => {
+    const t = endsMs(f);
+    return t && t > nowMs && t - nowMs <= 48 * 36e5;
+  });
+  const rest = freebies.filter((f) => urgent.indexOf(f) < 0);
+  const topFree = rest.slice(0, 8);
+  const urgLine = urgent.length ? '<p class="hero-urgency">\u26A1 <b>' + urgent.length + "</b> free game" + (urgent.length > 1 ? "s vanish" : " vanishes") + " in the next 48 hours \xB7 <span data-sweep>next sweep soon</span></p>" : '<p class="hero-urgency"><span data-sweep>next sweep soon</span> \xB7 new drops land every 20 minutes</p>';
+  return navHTML("/") + `<div class="wrap"><header class="hero"><div class="overline">Free games \xB7 steep discounts</div><h1>Free PC games, before they're gone.</h1><p class="sub">Right now: <b>` + freebies.length + "</b> games free to claim, <b>" + deals.length + `</b> Steam discounts tracked live. We sweep 14 stores every 20 minutes, so when a game goes free or a price craters, it's here within minutes. Browsing is free forever.</p><div class="hero-cta"><a class="btn" href="/freebies">See what's free</a><a class="btn ghost" href="/deals">Browse today's deals</a></div>` + urgLine + '</header><div class="sec-head"><h2>Top discounts</h2><a class="more" href="/deals">Browse all deals \u2192</a></div><div class="dealrows">' + (topDeals.length ? topDeals.map(dealRow).join("") : '<p class="empty">Deal feed is quiet at the moment.</p>') + "</div>" + (urgent.length ? '<div class="sec-head urgent"><h2>Last call</h2><span class="more">gone within 48 hours</span></div><div class="grid">' + urgent.map(freebieCard).join("") + "</div>" : "") + '<div class="sec-head"><h2>Free to claim</h2><a class="more" href="/freebies">Browse all freebies \u2192</a></div><div class="grid">' + (topFree.length ? topFree.map(freebieCard).join("") : '<p class="empty">No freebies right now. Check back soon.</p>') + '</div><div class="sec-head"><h2>Simple pricing</h2><a class="more" href="/pricing">Compare plans \u2192</a></div><p class="sec-sub">Browsing is free forever. Pro adds alerts.</p><div class="plans home-plans"><div class="plan"><h3>Scout</h3><div class="p">$0<small> / forever</small></div><div class="per">Every deal and freebie on this site. No account needed.</div><div style="margin-top:18px"><a class="btn ghost" href="/freebies">Browse free loot</a></div></div><div class="plan pro"><h3>Hunter <span class="badge free">Pro</span></h3><div class="p">$4<small> / month</small></div><div class="per">or <b>$39/year</b> \xB7 cancel anytime</div><div class="per" style="margin-top:10px">Fast Telegram alerts (usually within 20 minutes), one morning email digest, wishlist price watch, and API access.</div><div style="margin-top:18px"><a class="btn" href="/pricing">Get Pro alerts</a></div></div></div><div class="sec-head"><h2>Questions, answered</h2><a class="more" href="/faq">Full FAQ \u2192</a></div>' + homeFaqHTML() + "</div>" + COUNTDOWN_JS + footHTML();
+}
+function dealsPageHTML(deals) {
+  return navHTML("/deals") + '<div class="wrap"><div class="pagehead"><div class="overline">Price drops</div><h1>Steam deals</h1><p>' + deals.length + ' deals tracked, sorted by biggest discount first. Prices refresh every 20 minutes.</p></div><div class="dealrows" style="margin-top:20px">' + (deals.length ? deals.map(dealRow).join("") : '<p class="empty">Deal feed is quiet at the moment.</p>') + "</div></div>" + footHTML();
+}
+function freebiesPageHTML(freebies) {
+  return navHTML("/freebies") + '<div class="wrap"><div class="pagehead"><div class="overline">On the radar</div><h1>Free to claim</h1><p>Every free PC game live right now, but not for long. Claim buttons go straight to the source, no catch.</p></div><div class="sec-head"><h2>' + freebies.length + ' live now</h2><a class="more" href="/api/docs">API docs \u2192</a></div><div class="grid">' + (freebies.length ? freebies.map(freebieCard).join("") : '<p class="empty">No freebies right now. Check back soon.</p>') + '</div><p class="srcattr">Freebies data by <a href="https://www.gamerpower.com" target="_blank" rel="noopener">GamerPower</a></p></div>' + COUNTDOWN_JS + footHTML();
+}
+function pricingPageHTML() {
+  return navHTML("/pricing") + '<div class="wrap"><div class="pagehead"><div class="overline">Pricing</div><h1>Free forever. Pro for loot hunters.</h1><p>Browse every freebie and deal free. Pro alerts you fast, before freebies expire.</p></div><div class="plans"><div class="plan"><h3>Scout</h3><div class="p">$0<small> / forever</small></div><div class="per">For casual browsers</div><ul><li>Live freebies feed</li><li>Steam deals feed</li><li>New drops every 20 min</li><li class="no">Fast loot alerts</li><li class="no">Email digest</li></ul><a class="btn ghost" href="/freebies">Browse free loot</a></div><div class="plan pro"><h3>Hunter <span class="badge free">Pro</span></h3><div class="p">$4<small> / month</small></div><div class="per">or <b>$39/yr</b> ($3.25/mo). Two months free.</div><ul><li>Everything in Scout</li><li>Fast Telegram alerts</li><li>Daily email digest</li><li>Every freebie + every deal matching your alert settings</li><li>Wishlist price watch</li><li>Pro API access for the deals & freebies feeds</li><li>Support indie radar development</li></ul><div style="display:flex;gap:10px;flex-wrap:wrap"><a class="btn" href="https://checkout.dodopayments.com/buy/pdt_0No6epRAEDlFPuD8vFMT3?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">Monthly: $4/mo</a><a class="btn ghost" href="https://checkout.dodopayments.com/buy/pdt_0No6f9EaIF1CMH6wKBTVl?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">Yearly: $39/yr</a></div><div class="fine">Secure checkout via DodoPayments \xB7 cancel anytime</div></div></div></div>' + footHTML();
+}
+function aboutPageHTML() {
+  return navHTML("/about") + `<div class="wrap"><div class="pagehead"><div class="overline">About</div><h1>A radar for game loot.</h1></div><div class="legal"><p>Loot Radar is a deal tracker for PC games. It watches storefronts and deal feeds around the clock and surfaces two things: <strong>free-to-claim games</strong> and <strong>steep PC discounts</strong> across 14 storefronts, including Steam, Epic, GOG and IndieGala.</p><h2>How it works</h2><p>Every 20 minutes the radar sweeps its sources: the GamerPower giveaway feed for free games and deal feeds across 14 PC storefronts for price drops. Everything it finds is shown live and free on this site.</p><h2>What Pro is for</h2><p>Freebies vanish in hours. Pro members get a fast Telegram message, usually within 20 minutes of a drop, plus one email digest every morning and a wishlist price watch. That's the whole business model: no ads, no data selling.</p><h2>Who runs it</h2><p>Loot Radar is built and run by <strong>Muse</strong>, codemeoww's AI assistant, for <strong>codemeoww</strong>, a solo developer also behind <a href="https://ottergames.org">OtterGames.org</a>, a free browser-games portal. Questions, feedback or a deal tip? Write to <a href="mailto:lootradar@codemeoww.com">lootradar@codemeoww.com</a>. Every email is read by a human.</p></div></div>` + footHTML();
+}
+function termsPageHTML() {
+  return navHTML("/terms") + `<div class="wrap"><div class="pagehead"><div class="overline">Legal</div><h1>Terms of service</h1><p>Last updated: September 2026. By using Loot Radar you agree to these terms.</p></div><div class="legal"><h2>1. The service</h2><p>Loot Radar aggregates publicly available information about free PC games and PC game discounts, and offers optional paid alert subscriptions ("Pro"). Deal and freebie data comes from third-party feeds; we make no guarantee about the accuracy, availability or duration of any listed game or price.</p><h2>2. Pro subscriptions</h2><p>Pro is billed monthly ($4) or yearly ($39) through our payment provider, DodoPayments. Subscriptions renew automatically until cancelled. Cancel anytime from the billing link in your DodoPayments receipt email. Pro stays active until the end of the paid period.</p><h2>3. No refunds</h2><p><strong>All Pro sales are final and non-refundable.</strong> Because Pro is an instantly delivered digital service, we do not offer refunds, partial refunds or credits for any reason, including unused time after cancellation. See the <a href="/refunds">refund policy</a>.</p><h2>4. Fair use of the API</h2><p>Pro members may use the Loot Radar API (documented at <a href="/api/docs">/api/docs</a>) for personal projects and bots, within the published rate limits (600 requests/hour per key). Do not resell raw API access, scrape the site aggressively, or share your API key publicly. We may revoke keys or suspend accounts that abuse the service.</p><h2>5. Acceptable use</h2><p>Don't use Loot Radar to break the law, harass anyone, or interfere with the service or its sources. One account per person; don't share your login or API keys.</p><h2>6. Liability</h2><p>The service is provided "as is". We are not liable for expired deals, missed freebies, or any loss arising from your use of the site, alerts or API. Our total liability is limited to what you paid us in the last 12 months.</p><h2>7. Changes</h2><p>We may update these terms; continued use after changes means you accept them. Questions: <a href="mailto:lootradar@codemeoww.com">lootradar@codemeoww.com</a>.</p></div></div>` + footHTML();
+}
+function privacyPageHTML() {
+  return navHTML("/privacy") + `<div class="wrap"><div class="pagehead"><div class="overline">Legal</div><h1>Privacy policy</h1><p>Last updated: September 2026. Short version: we collect the minimum needed to run alerts, and we never sell your data.</p></div><div class="legal"><h2>What we collect</h2><ul><li><strong>Email address</strong>: for login (magic links), the daily digest, and tying your Pro subscription to your account.</li><li><strong>Telegram chat ID</strong>: only if you connect Telegram, so alerts can reach you.</li><li><strong>Wishlist titles</strong>: the games you add to your price watch.</li><li><strong>Payment details</strong>: handled entirely by DodoPayments; we only store your subscription status, plan and renewal date.</li></ul><h2>What we don't do</h2><p>No ads, and we never sell or rent your data. Pro subscriptions are the entire business model.</p><h2>Analytics</h2><p>We use Microsoft Clarity to understand how visitors use the site: anonymous heatmaps and session replays that help us fix confusing pages. Clarity sets its own cookies and collects device, browser and interaction data under <a href="https://privacy.microsoft.com/en-us/privacystatement">Microsoft's privacy statement</a>. Your email, wishlist, Telegram details and API keys stay in our database.</p><h2>Cookies</h2><p>Our own cookie: <code>lr_sess</code>, your login session (HTTP-only, 30 days). Microsoft Clarity sets its own analytics cookies, as described above.</p><h2>Where data lives</h2><p>Data is stored on Cloudflare's D1 database and KV store. We keep alert-dedup records for 180 days and login tokens only until they expire or are used.</p><h2>Your rights</h2><p>Write to <a href="mailto:lootradar@codemeoww.com">lootradar@codemeoww.com</a> to get a copy of your data or to have it deleted. Deleting your account ends Pro alerts; active subscriptions still need cancelling via DodoPayments.</p></div></div>` + footHTML();
+}
+function refundsPageHTML() {
+  return navHTML("/refunds") + `<div class="wrap"><div class="pagehead"><div class="overline">Legal</div><h1>Refund policy</h1><p>Last updated: September 2026.</p></div><div class="legal"><h2>No refunds</h2><p><strong>All Loot Radar Pro sales are final and non-refundable.</strong> We do not offer refunds, partial refunds or account credits for monthly or yearly subscriptions, including for unused time after you cancel, or if you forget to cancel before renewal.</p><h2>Why</h2><p>Pro is delivered digitally: alerts start with the next scan (usually within 20 minutes of subscribing), and every alert costs us real money to send. We keep the price low ($4/month) instead of building refund overhead into it.</p><h2>Cancel anytime</h2><p>You can cancel in one click from the billing link in your DodoPayments receipt email. Pro stays active until the end of the paid period. You keep every alert you've paid for.</p><h2>Billing mistakes</h2><p>If you were charged twice or for a plan you never bought, that's a billing error. Write to <a href="mailto:lootradar@codemeoww.com">lootradar@codemeoww.com</a> and we'll make it right.</p></div></div>` + footHTML();
+}
+function apiDocsPageHTML() {
+  return navHTML("/api/docs") + `<div class="wrap"><div class="pagehead"><div class="overline">Developers</div><h1>Loot Radar API</h1><p>The same live feeds that power this site, free-to-claim PC games and 70%+ Steam deals, as JSON. <strong>Pro members only.</strong> Get your key on the <a href="/pro" style="color:var(--txt);text-decoration:underline;text-decoration-color:rgba(255,255,255,.35)">Pro dashboard</a>.</p></div><div class="legal"><h2>Authentication</h2><p>Pass your key in the <code>X-API-Key</code> header, or as <code>?key=</code>. Keys start with <code>lr_</code>. Keep them secret. One account per person, don't publish your key.</p><pre><code>curl -H "X-API-Key: lr_your_key_here" \\
+  https://radar.codemeoww.com/api/deals</code></pre><h2>GET /api/deals</h2><p>Live deal listings. Defaults to Steam deals at 70%+ off, sorted by biggest discount. Steam deals link <strong>straight to the Steam store page</strong>; deals from other stores link through the upstream redirect (their data source only exposes deal IDs, not store URLs).</p><p>Filters: <code>storeID</code> (default 1 = Steam), <code>upperPrice</code>, <code>lowerPrice</code>, <code>title</code>, <code>exact</code>, <code>onSale</code>, <code>steamAppID</code>, <code>metacritic</code>, <code>steamRating</code>, <code>minimumReviewCount</code>, <code>maxAge</code> (1-2500 hours), <code>steamworks</code>, <code>AAA</code>, <code>sortBy</code> (Savings, Price, Title, Metacritic, Release, DealRating, Reviews, ReviewCount, Store, Recent), <code>desc</code>, <code>pageNumber</code>, <code>pageSize</code> (max 60), <code>minSavings</code> (default 70, set 0 to disable). Add <code>output=RSS</code> to get the same feed as raw RSS instead of JSON.</p><pre><code>curl -H "X-API-Key: lr_your_key_here" \\
+  "https://radar.codemeoww.com/api/deals?upperPrice=10&amp;sortBy=Price"</code></pre><pre><code>{
+  "count": 30,
+  "updated": "2026-09-22T03:00:00.000Z",
+  "items": [
+    { "title": "Hollow Knight", "store": "Steam", "storeID": "1",
+      "price": "3.74", "was": "14.99", "off": 75,
+      "thumb": "https://\u2026", "url": "https://store.steampowered.com/app/367520/",
+      "steamAppID": "367520", "gameID": "12345" }
+  ]
+}</code></pre><h2>GET /api/deals/{dealID}</h2><p>One deal, looked up by its deal ID: game info, cheaper stores and the all-time cheapest price. Links go straight to the store page.</p><pre><code>curl -H "X-API-Key: lr_your_key_here" \\
+  https://radar.codemeoww.com/api/deals/HhzMJAgQYGZ%2BFPpBG%2BRFcuUQZJO3KXvlnyYYGwGUfU%3D</code></pre><h2>GET /api/freebies</h2><p>free-to-claim PC games live right now. Up to 12 items.</p><pre><code>{
+  "count": 12,
+  "updated": "2026-09-22T03:00:00.000Z",
+  "items": [
+    { "title": "Shogun Showdown", "worth": "$14.99",
+      "thumb": "https://\u2026", "url": "https://\u2026", "desc": "\u2026",
+      "platforms": "PC", "ends": "2026-10-01" }
+  ]
+}</code></pre><h2>GET /api/games?title=\u2026</h2><p>Search games by title or Steam app ID. At least one of <code>title</code> / <code>steamAppID</code> is required. <code>limit</code> (max 60) and <code>exact</code> are optional. Pass <code>ids</code> (up to 25 comma-separated game IDs) instead to fetch several games at once.</p><pre><code>curl -H "X-API-Key: lr_your_key_here" \\
+  "https://radar.codemeoww.com/api/games?title=portal"</code></pre><pre><code>{
+  "count": 3,
+  "items": [
+    { "gameID": "10229", "title": "Portal", "cheapest": "0.99",
+      "thumb": "https://\u2026", "steamAppID": "400",
+      "url": "https://store.steampowered.com/app/400/",
+      "details": "https://radar.codemeoww.com/api/games/10229" }
+  ]
+}</code></pre><h2>GET /api/games/{id}</h2><p>Full details for one game: current cheapest price, all-time cheapest, and every live deal with direct store links.</p><pre><code>curl -H "X-API-Key: lr_your_key_here" \\
+  https://radar.codemeoww.com/api/games/10229</code></pre><h2>GET /api/stores</h2><p>Directory of tracked stores: id, name and whether the store is active. Add <code>?lastChange=1</code> to get each store's last update time instead (handy for skipping a full refresh).</p><pre><code>curl -H "X-API-Key: lr_your_key_here" \\
+  https://radar.codemeoww.com/api/stores</code></pre><h2>Rate limits</h2><p><strong>600 requests per hour per key.</strong> Exceeding it returns <code>429</code>. Deal data refreshes every ~20 minutes, so polling faster than that wastes your quota. Cache the response.</p><h2>Errors</h2><p><code>400</code>: bad parameter (e.g. <code>maxAge</code> out of range, or no <code>title</code>/<code>steamAppID</code>/<code>ids</code> on /api/games). <code>401</code>: missing, invalid, revoked key, or the key's owner isn't Pro anymore. <code>404</code>: unknown deal ID. <code>429</code>: rate limit. <code>502</code>: upstream feed hiccup, retry shortly. Every 401 body links back here.</p><h2>Keys</h2><p>Create up to 5 keys and revoke old ones from the <a href="/pro">Pro dashboard</a>. Lost your key? Revoke it and make a new one. Old keys stop working immediately.</p></div></div>` + footHTML();
+}
+function faqItem(id, q, a) {
+  return '<details id="' + id + '"><summary>' + q + "</summary><p>" + a + "</p></details>";
+}
+function faqData() {
+  return [
+    [
+      "q1",
+      "What is Loot Radar?",
+      "Loot Radar is a PC game deals tracker. It tracks discounts across 14 PC storefronts, including Steam, Epic, GOG and IndieGala, plus free-to-claim game giveaways, scanning for new loot every 20 minutes."
+    ],
+    [
+      "q2",
+      "How does Loot Radar work?",
+      "Every 20 minutes the radar sweeps deal feeds and giveaway listings. Everything it finds is shown live and free on this site. Pro members also get fast Telegram alerts (usually within 20 minutes), plus one email digest every morning."
+    ],
+    [
+      "q3",
+      "Is Loot Radar free?",
+      "Yes. Browsing every deal and freebie on the site is free forever, no account needed. Loot Radar Pro ($4/month or $39/year) pays for fast Telegram alerts (usually within 20 minutes), the morning email digest, wishlist price tracking and API access."
+    ],
+    [
+      "q4",
+      "What is Loot Radar Pro?",
+      "Pro is the paid tier for loot hunters: fast Telegram alerts for every free-to-claim game and every deal matching your alert settings (your stores, 50-95% off, all deals or wishlist only), one email digest each morning, wishlist price watch, and a Pro API key. $4/month or $39/year, cancel anytime."
+    ],
+    [
+      "q5",
+      "How do I claim a free PC game?",
+      'Open the <a href="/freebies">Freebies</a> page, pick a game and hit Claim. The button takes you straight to the source (Epic, Steam, GOG, IndieGala and more). Most giveaways last hours to days, so Pro alerts help you grab them before they expire.'
+    ],
+    [
+      "q6",
+      "Which stores does Loot Radar track?",
+      "Free games come from Steam, Epic Games, GOG, IndieGala, Ubisoft and other storefronts and publishers. Discount alerts cover 14 PC storefronts. You pick the stores and set your own minimum discount from 50% to 95%. The free site feed shows Steam deals."
+    ],
+    [
+      "q7",
+      "How often are deals and freebies updated?",
+      "The radar scans its sources every 20 minutes, and the site updates with each scan. Pro members usually hear about new loot within 20 minutes, well before most freebies expire."
+    ],
+    [
+      "q8",
+      "How do the Telegram alerts work?",
+      `Log in with the email you used at checkout, open your <a href="/pro">Pro dashboard</a> and tap <b>Connect Telegram</b>. It takes about ten seconds. When new loot drops you get <b>one message</b> listing everything new (usually within 20 minutes), capped at 8 items per scan so you're never spammed. The same drop is never alerted twice to the same Telegram account. To switch Telegram accounts, hit <b>Disconnect / switch account</b> on the dashboard, or send /unlink in Telegram, then connect the new one.`
+    ],
+    [
+      "q13",
+      "Can I choose what alerts I get?",
+      'Yes. On the <a href="/pro">Pro dashboard</a> you can switch free-game and discount alerts on or off, pick from all 14 tracked stores (Steam, Epic, GOG and IndieGala are on by default), set a minimum discount from 50% to 95%, or limit discounts to your wishlist games only. The same controls work from Telegram: send /prefs to see your settings, /help for the full command list.'
+    ],
+    [
+      "q9",
+      "How many emails will I get?",
+      'Exactly one per day: the morning digest at 9 AM IST, with wishlist price hits, fresh freebies and the biggest deals. The only other email is a magic login link when you request one. We never send per-drop emails, and there is no newsletter. Prefer Telegram only? Turn the digest off anytime from the Email section of your <a href="/pro">Pro dashboard</a>.'
+    ],
+    [
+      "q10",
+      "What can I do with the Loot Radar API?",
+      'Pro members get an API key from the <a href="/pro">dashboard</a> for live deals, freebies, game search and store listings as JSON, documented at <a href="/api/docs">/api/docs</a>. Up to 5 keys, 600 requests/hour per key. Use it for bots and personal dashboards.'
+    ],
+    [
+      "q11",
+      "How do I cancel Loot Radar Pro?",
+      "Cancel anytime from the billing link in your DodoPayments receipt email. Pro stays active until the end of the paid period."
+    ],
+    [
+      "q12",
+      "Do you offer refunds?",
+      `<b>No. All Pro sales are final and non-refundable</b>. Including unused time after cancellation. Billing errors are different: if you were charged twice, email <a href="mailto:lootradar@codemeoww.com">lootradar@codemeoww.com</a> and we'll make it right. See the full <a href="/refunds">refund policy</a>.`
+    ],
+    [
+      "q14",
+      "Who runs Loot Radar?",
+      'Loot Radar is built and run by <b>Muse</b>, the AI assistant, for solo developer codemeoww (also behind <a href="https://ottergames.org">OtterGames.org</a>). Support: <a href="mailto:lootradar@codemeoww.com">lootradar@codemeoww.com</a>. Every message is read by a human.'
+    ]
+  ];
+}
+function faqJSONLD() {
+  const data = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: faqData().map(([id, q, a]) => ({
+      "@type": "Question",
+      name: q,
+      acceptedAnswer: { "@type": "Answer", text: a.replace(/<[^>]+>/g, "") }
+    }))
+  };
+  return '<script type="application/ld+json">' + JSON.stringify(data).replace(/</g, "\\u003c") + "<\/script>";
+}
+function homeFaqHTML() {
+  const data = faqData();
+  const items = ["q1", "q3", "q4", "q6", "q8", "q11"].map(function(id) {
+    const f = data.find(function(x) {
+      return x[0] === id;
+    });
+    return f ? faqItem("h" + id, f[1], f[2]) : "";
+  }).join("");
+  return '<div class="faqwrap home-faq">' + items + "</div>";
+}
+function faqPageHTML() {
+  const items = faqData().map(([id, q, a]) => faqItem(id, q, a));
+  return navHTML("/faq") + '<div class="wrap"><div class="pagehead"><div class="overline">FAQ</div><h1>Questions, answered</h1><p>What Loot Radar is, how alerts work, Pro billing, the API: the stuff people ask.</p></div><div class="faqwrap">' + items.join("") + "</div></div>" + faqJSONLD() + footHTML();
+}
+function loginHTML() {
+  return navHTML("/login") + `<div class="wrap" style="max-width:520px"><div class="pagehead"><div class="overline">Pro login</div><h1>Check your loot status</h1><p>Enter the email you used at checkout. We'll send a magic login link. No password needed.</p></div><form id="lf" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:20px"><input id="le" class="field" type="email" required placeholder="you@example.com"><button class="btn" type="submit">Send link</button></form><p id="lm" class="sec-sub" style="margin-top:14px"></p><script>document.getElementById('lf').addEventListener('submit',async function(e){e.preventDefault();var em=document.getElementById('le').value;var m=document.getElementById('lm');m.textContent='Sending\u2026';try{await fetch('/api/auth/request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:em})});m.textContent='Link sent! Check your inbox (and spam folder). One link per 15 minutes. Use the latest email.';}catch(_){m.textContent='Something went wrong. Try again.';}});<\/script></div>` + footHTML();
+}
+function thanksHTML(prefill) {
+  const em = esc(prefill || "");
+  return navHTML("/thanks") + '<div class="wrap" style="max-width:520px"><div class="pagehead"><div class="overline">Payment complete</div><h1>You are Pro now</h1><p>Your subscription is active. One last step: log in with the email you used at checkout, and your Pro dashboard unlocks.</p></div><form id="lf" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:20px"><input id="le" class="field" type="email" required placeholder="you@example.com" value="' + em + `"><button class="btn" type="submit">Send link</button></form><p id="lm" class="sec-sub" style="margin-top:14px"></p><p class="sec-sub" style="margin-top:14px">Didn't land here from Dodo's checkout? Log in with your checkout email anyway. Pro is tied to that email.</p><script>document.getElementById('lf').addEventListener('submit',async function(e){e.preventDefault();var em=document.getElementById('le').value;var m=document.getElementById('lm');m.textContent='Sending\u2026';try{await fetch('/api/auth/request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:em})});m.textContent='Link sent! Check your inbox (and spam folder). One link per 15 minutes. Use the latest email.';}catch(_){m.textContent='Something went wrong. Try again.';}});<\/script></div>` + footHTML();
+}
+function prefsCard(p) {
+  const storeList = JSON.stringify(STORE_PICK_ORDER.map(function(id) {
+    return [id, STORE_NAMES[id]];
+  }));
+  const minOpts = [50, 60, 70, 80, 90].map(function(n) {
+    return '<option value="' + n + '"' + (p.min_discount === n ? " selected" : "") + ">" + n + "%+</option>";
+  }).join("");
+  const tg = function(id, on, title, desc) {
+    return '<div class="pref-row"><div><div class="pref-t">' + title + '</div><div class="pref-d">' + desc + '</div></div><label class="tg"><input type="checkbox" id="' + id + '"' + (on ? " checked" : "") + '><span class="tr"></span></label></div>';
+  };
+  return '<div class="dash-card"><h3>Alert preferences</h3><p class="dash-sub">Fast Telegram alerts, one message per scan, only what you pick. You can also change these from Telegram with /prefs.</p>' + tg("pf_freebies", p.alert_freebies, "free-to-claim game alerts", "Get pinged the moment a free-to-claim game drops.") + tg("pf_deals", p.alert_deals, "Discount alerts", "Price cuts that match your stores, min discount and mode below.") + '<div class="dash-sec">Stores for discount alerts</div><p class="dash-sub">Only deals from these stores can trigger an alert. Search to find one, tap to add it.</p><div class="combo" id="store_combo"><input id="store_q" class="fld" type="text" placeholder="Search stores, e.g. Steam" autocomplete="off"><div class="combo-drop" id="store_drop"></div></div><div class="chips" id="store_chips"></div><div class="dash-sec">Discount filters</div><div style="display:flex;gap:16px;flex-wrap:wrap"><label style="font-size:.88rem;font-weight:600">Min. discount<br><select id="pf_minoff" class="fld" style="margin-top:6px">' + minOpts + '</select></label><label style="font-size:.88rem;font-weight:600">Discounts for<br><select id="pf_mode" class="fld" style="margin-top:6px"><option value="all"' + (p.deals_mode === "all" ? " selected" : "") + '>all games</option><option value="wishlist"' + (p.deals_mode === "wishlist" ? " selected" : "") + '>my wishlist only</option></select></label></div><div class="pref-d" style="margin-top:10px">My wishlist only: discount alerts fire only for games on your wishlist. All games: any deal matching your stores and min discount.</div><div class="dash-sec">Email</div>' + tg("pf_digest", p.digest_email, "Daily digest email", "One email each morning at 9 AM IST: wishlist price hits, fresh freebies and the biggest deals. Off means alerts stay Telegram-only.") + '<div style="margin-top:18px"><button class="btn small" onclick="prefsSave()">Save preferences</button> <span id="pf_msg" class="sec-sub" style="margin-left:8px"></span></div><script>var STORE_LIST=' + storeList + ";var selStores=" + JSON.stringify(p.deal_stores) + `;var storeQ=document.getElementById('store_q'),storeDrop=document.getElementById('store_drop'),storeChips=document.getElementById('store_chips');function storeName(id){for(var i=0;i<STORE_LIST.length;i++){if(STORE_LIST[i][0]===id)return STORE_LIST[i][1];}return id;}function storeRenderChips(){var h='';for(var i=0;i<selStores.length;i++){h+='<span class="chip">'+storeName(selStores[i])+'<button type="button" data-id="'+selStores[i]+'" onclick="storeRm(this)">&times;</button></span>';}storeChips.innerHTML=h;}function storeRm(b){var id=b.getAttribute('data-id');selStores=selStores.filter(function(x){return x!==id;});storeRenderChips();}function storeRenderDrop(){var q=storeQ.value.trim().toLowerCase();var h='';for(var i=0;i<STORE_LIST.length;i++){var s=STORE_LIST[i];if(selStores.indexOf(s[0])>=0)continue;if(q&&s[1].toLowerCase().indexOf(q)<0)continue;h+='<button type="button" class="combo-opt" data-id="'+s[0]+'">'+s[1]+'</button>';}storeDrop.innerHTML=h||'<div class="combo-empty">No more stores match.</div>';var btns=storeDrop.querySelectorAll('.combo-opt');for(var j=0;j<btns.length;j++){btns[j].addEventListener('click',function(){selStores.push(this.getAttribute('data-id'));storeQ.value='';storeDrop.classList.remove('open');storeRenderChips();});}}storeQ.addEventListener('input',function(){storeRenderDrop();storeDrop.classList.add('open');});storeQ.addEventListener('focus',function(){storeRenderDrop();storeDrop.classList.add('open');});document.addEventListener('click',function(e){if(!e.target.closest('#store_combo'))storeDrop.classList.remove('open');});storeRenderChips();async function prefsSave(){var m=document.getElementById('pf_msg');m.textContent='Saving...';var body={alert_freebies:document.getElementById('pf_freebies').checked,alert_deals:document.getElementById('pf_deals').checked,deal_stores:selStores,min_discount:parseInt(document.getElementById('pf_minoff').value,10),deals_mode:document.getElementById('pf_mode').value,digest_email:document.getElementById('pf_digest').checked};try{var r=await fetch('/api/alerts/prefs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});var d=await r.json();m.textContent=d.ok?'Saved':('Could not save: '+(d.error||'try again'));}catch(e){m.textContent='Could not save, try again';}}<\/script></div>`;
+}
+function wishlistCard(items) {
+  const rows = items.map(function(t) {
+    return '<div class="wl-row"><span class="t">' + esc(t) + '</span><button onclick="wlDel(this)" data-t="' + esc(t) + '" title="Remove">&times;</button></div>';
+  }).join("");
+  return '<div class="dash-card"><h3>Wishlist price watch</h3><p class="dash-sub">Search for a game and add it. Your daily digest shows the cheapest price we can find for each one.</p><div class="combo" id="wl_combo" style="margin-bottom:14px"><input id="wlt" class="fld" type="text" maxlength="120" placeholder="Search games, e.g. Hollow Knight" autocomplete="off"><div class="combo-drop" id="wl_drop"></div></div><div id="wl_list">' + (rows || '<p class="dash-sub">Nothing on your watch list yet.</p>') + `</div><script>var wlT=document.getElementById('wlt'),wlDrop=document.getElementById('wl_drop'),wlTimer=null;function wlEsc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}function wlAddTitle(t){t=(t||'').trim().slice(0,120);if(!t)return;wlDrop.classList.remove('open');fetch('/api/wishlist/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:t})}).then(function(){location.reload();});}wlT.addEventListener('input',function(){clearTimeout(wlTimer);var q=wlT.value.trim();if(q.length<2){wlDrop.classList.remove('open');return;}wlTimer=setTimeout(function(){fetch('/api/pro/search?q='+encodeURIComponent(q)).then(function(r){return r.json();}).then(function(d){var items=(d&&d.items)||[];var h='';for(var i=0;i<items.length;i++){var g=items[i];h+='<button type="button" class="combo-opt" data-t="'+wlEsc(g.title)+'">'+(g.thumb?'<img src="'+wlEsc(g.thumb)+'" alt="" loading="lazy">':'')+'<span>'+wlEsc(g.title)+'</span>'+(g.cheapest&&g.cheapest!=='0'?'<span class="pr">from $'+wlEsc(g.cheapest)+'</span>':'')+'</button>';}if(!h){h='<div class="combo-empty">No matches. Press Enter to add &quot;'+wlEsc(q)+'&quot; anyway.</div>';}wlDrop.innerHTML=h;wlDrop.classList.add('open');var btns=wlDrop.querySelectorAll('.combo-opt');for(var j=0;j<btns.length;j++){btns[j].addEventListener('click',function(){wlAddTitle(this.getAttribute('data-t'));});}}).catch(function(){wlDrop.classList.remove('open');});},250);});wlT.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();wlAddTitle(wlT.value);}});document.addEventListener('click',function(e){if(!e.target.closest('#wl_combo'))wlDrop.classList.remove('open');});async function wlDel(b){var r=await fetch('/api/wishlist/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:b.getAttribute('data-t')})});if(r.ok)location.reload();}<\/script></div>`;
+}
+function apiKeyCard(keys) {
+  const rows = keys.map(function(k) {
+    return '<div class="apikey-row"><code>' + esc(k.prefix) + `\u2026</code><button onclick="keyRevoke('` + esc(k.prefix) + `')" style="background:none;border:0;color:var(--mut);font-size:.85rem;cursor:pointer" title="Revoke">revoke</button></div>`;
+  }).join("");
+  return '<div class="plan" style="max-width:560px;margin:16px auto 0;text-align:left"><h3>Pro API keys</h3><p class="sec-sub" style="margin-bottom:12px">Live deals, freebies, game search &amp; stores as JSON. <a href="/api/docs" style="color:var(--txt);text-decoration:underline;text-decoration-color:rgba(255,255,255,.35)">docs</a>. Up to 5 keys, 600 requests/hour each.</p><div id="keylist">' + (rows || "") + `</div><div id="newkey"></div><button class="btn small" onclick="keyCreate()">Create new key</button><script>async function keyCreate(){var r=await fetch('/api/apikey/create',{method:'POST'});var d=await r.json();if(d.key){document.getElementById('newkey').innerHTML='<div class="keybox"><code>'+d.key+'</code></div><p class="sec-sub">Copy it now. It is shown only once.</p>';}else{alert(d.error||'Could not create key');}}async function keyRevoke(p){if(!confirm('Revoke key '+p+'\u2026?'))return;var r=await fetch('/api/apikey/revoke',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prefix:p})});if(r.ok)location.reload();}<\/script></div>`;
+}
+async function proHTML(env, email, tgUrl) {
+  const st = await proStatus(env, email);
+  let wlItems = [];
+  let apiKeys = [];
+  let prefs = normPrefs(null);
+  if (st.pro && env && env.DB) {
+    wlItems = await getWishlist(env, email);
+    try {
+      const kq = await env.DB.prepare("SELECT prefix, created_at FROM api_keys WHERE email = ? AND revoked = 0 ORDER BY created_at").bind(email).all();
+      apiKeys = kq && kq.results || [];
+    } catch (e) {
+    }
+    try {
+      const pq = await env.DB.prepare("SELECT alert_freebies, alert_deals, deal_stores, min_discount, deals_mode, digest_email FROM customers WHERE email = ?").bind(email).all();
+      prefs = normPrefs(pq && pq.results && pq.results[0] || null);
+    } catch (e) {
+    }
+  }
+  let inner;
+  if (!st.pro) {
+    inner = '<div class="plan" style="max-width:560px;margin:22px auto 0;text-align:center"><h3>No Pro subscription on this email</h3><p class="sec-sub" style="text-align:center">Logged in as <b>' + esc(email) + '</b>, but no active Pro subscription found for it.</p><div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap"><a class="btn" href="https://checkout.dodopayments.com/buy/pdt_0No6epRAEDlFPuD8vFMT3?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">$4/mo</a><a class="btn ghost" href="https://checkout.dodopayments.com/buy/pdt_0No6f9EaIF1CMH6wKBTVl?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">$39/yr</a></div></div>';
+  } else {
+    inner = '<div class="plan pro" style="max-width:560px;margin:22px auto 0;text-align:center"><h3>Hunter Pro <span class="badge free">active</span></h3><p class="sec-sub" style="text-align:center">Logged in as <b>' + esc(email) + "</b>" + (st.plan ? " \xB7 " + esc(st.plan) + " plan" : "") + "</p>" + (st.telegram ? `<p><span class="badge free">Telegram connected</span></p><p class="sec-sub" style="text-align:center">Loot alerts will land in your Telegram.</p><button class="btn small ghost" onclick="tgUnlink()">Disconnect / switch account</button> <span id="tg_msg" class="sec-sub"></span><script>async function tgUnlink(){if(!confirm('Disconnect Telegram? You can reconnect the same or a different account anytime.'))return;var m=document.getElementById('tg_msg');m.textContent='\u2026';try{var r=await fetch('/api/telegram/unlink',{method:'POST'});if(r.ok)location.reload();else m.textContent='\u26A0 Could not disconnect';}catch(e){m.textContent='\u26A0 Could not disconnect';}}<\/script>` : '<p class="sec-sub" style="text-align:center">Connect Telegram to get fast loot alerts:</p>' + (tgUrl ? '<a class="btn" href="' + tgUrl + '" target="_blank" rel="noopener">Connect Telegram</a>' : "")) + "</div>" + prefsCard(prefs) + wishlistCard(wlItems) + apiKeyCard(apiKeys);
+  }
+  return navHTML("/pro") + '<div class="wrap"><div class="pagehead" style="text-align:center"><div class="overline">Your radar</div><h1>Pro dashboard</h1></div>' + inner + `<div style="text-align:center;margin-top:26px"><button class="btn small ghost" onclick="fetch('/api/auth/logout',{method:'POST'}).then(function(){location.href='/';})">Log out</button></div></div>` + footHTML();
+}
+
+// src/router.js
+function finalize(html, status) {
+  return new Response(html, {
+    status: status || 200,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "public, max-age=300",
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "strict-origin-when-cross-origin"
+    }
+  });
+}
+async function cachedPage(request, ctx, render) {
+  const cache = caches.default;
+  let res = await cache.match(request);
+  if (!res) {
+    res = await render();
+    ctx.waitUntil(cache.put(request, res.clone()));
+  }
+  return res;
+}
+async function handleFetch(request, env, ctx) {
+  const url = new URL(request.url);
+  const path = url.pathname.replace(/\/+$/, "") || "/";
+  const isApi = path === "/api/freebies" || path === "/api/deals" || path.startsWith("/api/deals/") || path === "/api/games" || path === "/api/stores" || path.startsWith("/api/games/");
+  if (isApi) {
+    const auth = await apiKeyAuth(request, env, url);
+    if (!auth) {
+      return new Response(JSON.stringify({ error: "Pro API key required", docs: "https://radar.codemeoww.com/api/docs" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json; charset=utf-8" }
+      });
+    }
+    if (!rateOk("api:" + auth.hash, 600, 3600)) {
+      return new Response(JSON.stringify({ error: "rate limit exceeded (600/hour)" }), {
+        status: 429,
+        headers: { "Content-Type": "application/json; charset=utf-8" }
+      });
+    }
+    try {
+      let body;
+      if (path === "/api/freebies") {
+        const items = await getFreebies(ctx);
+        body = { count: items.length, updated: (/* @__PURE__ */ new Date()).toISOString(), items };
+      } else if (path === "/api/deals") {
+        body = await apiDeals(url, ctx);
+      } else if (path.startsWith("/api/deals/")) {
+        body = await apiDealLookup(decodeURIComponent(path.slice("/api/deals/".length).split("/")[0]), ctx);
+      } else if (path === "/api/games") {
+        body = await apiGameSearch(url, ctx);
+      } else if (path === "/api/stores") {
+        body = await apiStores(url, ctx);
+      } else {
+        body = await apiGameLookup(path.slice("/api/games/".length).split("/")[0], ctx);
+      }
+      if (body instanceof Response)
+        return body;
+      return new Response(JSON.stringify(body, null, 2), {
+        headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=300", "Access-Control-Allow-Origin": "*" }
+      });
+    } catch (e) {
+      const status = e && e.status ? e.status : 502;
+      return new Response(JSON.stringify({ error: e && e.message || "upstream error" }), {
+        status,
+        headers: { "Content-Type": "application/json; charset=utf-8" }
+      });
+    }
+  }
+  if (path === "/api/apikey/create" && request.method === "POST") {
+    const email = await sessionEmail(request, env);
+    const st = await proStatus(env, email);
+    if (!email || !st.pro) {
+      return new Response(JSON.stringify({ error: "Pro required" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+    if (!env || !env.DB)
+      return new Response(JSON.stringify({ error: "db unavailable" }), { status: 500, headers: { "Content-Type": "application/json" } });
+    try {
+      const existing = await env.DB.prepare("SELECT COUNT(*) AS n FROM api_keys WHERE email = ? AND revoked = 0").bind(email).first();
+      if (existing && existing.n >= 5) {
+        return new Response(JSON.stringify({ error: "key limit reached (5). Revoke an old key first" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+      const raw = "lr_" + randHex(24);
+      const hash = await sha256hex(raw);
+      await env.DB.prepare("INSERT INTO api_keys (api_key_hash, email, prefix, created_at, revoked) VALUES (?,?,?,?,0)").bind(hash, email, raw.slice(0, 12), (/* @__PURE__ */ new Date()).toISOString()).run();
+      memDel("apikey:" + hash);
+      return new Response(JSON.stringify({ key: raw, note: "Shown once. Copy it now." }), { headers: { "Content-Type": "application/json" } });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: "could not create key" }), { status: 500, headers: { "Content-Type": "application/json" } });
+    }
+  }
+  if (path === "/api/apikey/revoke" && request.method === "POST") {
+    const email = await sessionEmail(request, env);
+    if (!email)
+      return new Response(JSON.stringify({ ok: false }), { status: 401, headers: { "Content-Type": "application/json" } });
+    let prefix = "";
+    try {
+      prefix = String((await request.json()).prefix || "").slice(0, 12);
+    } catch (e) {
+    }
+    if (prefix && env && env.DB) {
+      try {
+        await env.DB.prepare("UPDATE api_keys SET revoked = 1 WHERE email = ? AND prefix = ?").bind(email, prefix).run();
+      } catch (e) {
+      }
+    }
+    return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
+  }
+  if (path === "/api/dodo/webhook") {
+    if (request.method !== "POST") {
+      return new Response(JSON.stringify({ error: "method not allowed" }), {
+        status: 405,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    const raw = await request.text();
+    const secret = env && env.DODO_WEBHOOK_SECRET || "";
+    let verified = false;
+    if (secret) {
+      const v = await verifyDodoWebhook(request, raw, secret);
+      verified = v.ok;
+      if (!verified) {
+        return new Response(JSON.stringify({ error: "bad signature", reason: v.reason }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+    }
+    let evt = null;
+    try {
+      evt = JSON.parse(raw);
+    } catch (e) {
+    }
+    const type = evt && (evt.type || evt.event) || "unknown";
+    const email = dodoCustomerEmail(evt);
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    try {
+      if (env && env.DB) {
+        await env.DB.prepare(
+          "INSERT INTO webhook_events (type, email, payload, verified, received_at) VALUES (?, ?, ?, ?, ?)"
+        ).bind(type, email, raw.slice(0, 2e4), verified ? 1 : 0, now).run();
+        const d = evt && evt.data || {};
+        const plan = d.metadata && d.metadata.plan || d.plan || null;
+        const periodEnd = d.current_period_end || d.renews_at || d.next_billing_date || null;
+        if (email && (type === "subscription.active" || type === "subscription.renewed" || type === "payment.succeeded")) {
+          await env.DB.prepare(
+            "INSERT INTO customers (email, pro, plan, pro_since, pro_until, deal_stores, updated_at) VALUES (?, 1, ?, ?, ?, '1,25,7,30', ?) ON CONFLICT(email) DO UPDATE SET pro=1, plan=excluded.plan, pro_until=excluded.pro_until, updated_at=excluded.updated_at"
+          ).bind(email, plan, now, periodEnd, now).run();
+        } else if (email && (type === "subscription.cancelled" || type === "subscription.on_hold")) {
+          await env.DB.prepare(
+            "INSERT INTO customers (email, pro, plan, pro_until, deal_stores, updated_at) VALUES (?, 0, ?, ?, '1,25,7,30', ?) ON CONFLICT(email) DO UPDATE SET pro=0, pro_until=excluded.pro_until, updated_at=excluded.updated_at"
+          ).bind(email, plan, periodEnd, now).run();
+        }
+      }
+    } catch (e) {
+    }
+    return new Response(JSON.stringify({ received: true, type, verified, has_email: !!email }), {
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+  if (path === "/logo.svg") {
+    return new Response(LOGO_SVG, {
+      headers: { "Content-Type": "image/svg+xml", "Cache-Control": "public, max-age=86400" }
+    });
+  }
+  if (path === "/robots.txt") {
+    return new Response("User-agent: *\nAllow: /\nSitemap: https://radar.codemeoww.com/sitemap.xml\n", {
+      headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "public, max-age=86400" }
+    });
+  }
+  if (path === "/sitemap.xml") {
+    const urls = ["", "deals", "freebies", "pricing", "faq", "about", "terms", "privacy", "refunds", "login", "api/docs"].map((p) => "<url><loc>https://radar.codemeoww.com/" + p + "</loc><lastmod>2026-09-22</lastmod></url>").join("");
+    return new Response('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + urls + "</urlset>", {
+      headers: { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, max-age=86400" }
+    });
+  }
+  if (path === "/api/auth/request" && request.method === "POST") {
+    let email = "";
+    try {
+      email = (await request.json()).email || "";
+    } catch (e) {
+    }
+    email = String(email).trim().toLowerCase();
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && env && env.KV) {
+      const recent = await env.KV.get("magicemail:" + email);
+      if (!recent) {
+        const token = randHex(32);
+        await env.KV.put("magic:" + token, JSON.stringify({ email }), { expirationTtl: 900 });
+        await env.KV.put("magicemail:" + email, "1", { expirationTtl: 900 });
+        const link = "https://radar.codemeoww.com/api/auth/verify?token=" + token;
+        ctx.waitUntil(sendEmail(env, email, "Your Loot Radar login link", magicLinkEmail(link)));
+      }
+    }
+    return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
+  }
+  if (path === "/api/auth/verify") {
+    const token = url.searchParams.get("token") || "";
+    const rec = env && env.KV ? await env.KV.get("magic:" + token, "json") : null;
+    if (!rec || !rec.email) {
+      return finalize(pageHTML("Link expired: Loot Radar", "That login link is invalid or expired.", "/login") + '<div class="wrap" style="padding:80px 22px;text-align:center"><h1>Link expired</h1><p class="sec-sub" style="text-align:center">That login link is invalid or expired.</p><a class="btn" href="/login">Get a new link</a></div></body></html>', 400);
+    }
+    await env.KV.delete("magic:" + token);
+    await env.KV.delete("magicemail:" + rec.email);
+    const sid = randHex(32);
+    await env.KV.put("sess:" + sid, JSON.stringify({ email: rec.email }), { expirationTtl: 2592e3 });
+    return new Response("", {
+      status: 302,
+      headers: {
+        Location: "https://radar.codemeoww.com/pro",
+        "Set-Cookie": "lr_sess=" + sid + "; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=2592000"
+      }
+    });
+  }
+  if (path === "/api/auth/me") {
+    const email = await sessionEmail(request, env);
+    const st = await proStatus(env, email);
+    return new Response(JSON.stringify({ email, pro: st.pro, plan: st.plan, telegram: st.telegram }), {
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+  if (path === "/api/auth/logout" && request.method === "POST") {
+    const sid = getCookie(request, "lr_sess");
+    if (sid && env && env.KV) {
+      await env.KV.delete("sess:" + sid);
+      memDel("sess:" + sid);
+    }
+    return new Response(JSON.stringify({ ok: true }), {
+      headers: { "Content-Type": "application/json", "Set-Cookie": "lr_sess=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0" }
+    });
+  }
+  if (path === "/api/pro/search" && request.method === "GET") {
+    const email = await sessionEmail(request, env);
+    if (!email)
+      return new Response(JSON.stringify({ ok: false, items: [] }), { status: 401, headers: { "Content-Type": "application/json" } });
+    const st = await proStatus(env, email);
+    if (!st.pro)
+      return new Response(JSON.stringify({ ok: false, items: [] }), { status: 403, headers: { "Content-Type": "application/json" } });
+    const q = (url.searchParams.get("q") || "").trim().slice(0, 80);
+    if (q.length < 2)
+      return new Response(JSON.stringify({ ok: true, items: [] }), { headers: { "Content-Type": "application/json" } });
+    let items = [];
+    try {
+      const data = await csGet(ctx, "/games", { title: q, limit: "8" }, 3600);
+      items = (Array.isArray(data) ? data : []).slice(0, 8).map((g) => {
+        const n = normGameSearch(g);
+        return { title: n.title, thumb: n.thumb, cheapest: n.cheapest, steamAppID: n.steamAppID };
+      });
+    } catch (e) {
+    }
+    return new Response(JSON.stringify({ ok: true, items }), { headers: { "Content-Type": "application/json" } });
+  }
+  if (path === "/api/wishlist/add" && request.method === "POST") {
+    const email = await sessionEmail(request, env);
+    if (!email)
+      return new Response(JSON.stringify({ ok: false }), { status: 401, headers: { "Content-Type": "application/json" } });
+    let title = "";
+    try {
+      title = String((await request.json()).title || "").trim().slice(0, 120);
+    } catch (e) {
+    }
+    if (title && env && env.DB) {
+      try {
+        await env.DB.prepare("INSERT OR IGNORE INTO wishlist (email, title, added_at) VALUES (?,?,?)").bind(email, title, (/* @__PURE__ */ new Date()).toISOString()).run();
+        memDel("wl:" + email);
+      } catch (e) {
+      }
+    }
+    return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
+  }
+  if (path === "/api/telegram/unlink" && request.method === "POST") {
+    const email = await sessionEmail(request, env);
+    if (!email)
+      return new Response(JSON.stringify({ ok: false, error: "login required" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    if (env && env.DB) {
+      try {
+        await env.DB.prepare("UPDATE customers SET telegram_chat_id = NULL, updated_at = ? WHERE email = ?").bind((/* @__PURE__ */ new Date()).toISOString(), email).run();
+      } catch (e) {
+      }
+    }
+    return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
+  }
+  if (path === "/api/alerts/prefs" && request.method === "POST") {
+    const email = await sessionEmail(request, env);
+    if (!email)
+      return new Response(JSON.stringify({ ok: false, error: "login required" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    let patch = {};
+    try {
+      patch = await request.json();
+    } catch (e) {
+    }
+    let res = { ok: false, error: "no database" };
+    if (env && env.DB)
+      res = await setPrefs(env, email, patch || {});
+    const status = res.ok ? 200 : 400;
+    return new Response(JSON.stringify(res), { status, headers: { "Content-Type": "application/json" } });
+  }
+  if (path === "/api/wishlist/remove" && request.method === "POST") {
+    const email = await sessionEmail(request, env);
+    if (!email)
+      return new Response(JSON.stringify({ ok: false }), { status: 401, headers: { "Content-Type": "application/json" } });
+    let title = "";
+    try {
+      title = String((await request.json()).title || "");
+    } catch (e) {
+    }
+    if (env && env.DB) {
+      try {
+        await env.DB.prepare("DELETE FROM wishlist WHERE email = ? AND title = ?").bind(email, title).run();
+        memDel("wl:" + email);
+      } catch (e) {
+      }
+    }
+    return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
+  }
+  if (path === "/login") {
+    return finalize(pageHTML("Log in: Loot Radar", "Log in to Loot Radar with a magic link to manage your Pro alerts.", "/login") + loginHTML() + "</body></html>");
+  }
+  if (path === "/thanks") {
+    const q = new URL(request.url).searchParams;
+    const em = (q.get("email") || "").slice(0, 120);
+    return finalize(pageHTML("You're Pro: Loot Radar", "Payment complete. Log in with your checkout email to unlock your Pro dashboard.", "/thanks") + thanksHTML(em) + "</body></html>");
+  }
+  if (path === "/pro") {
+    const email = await sessionEmail(request, env);
+    if (!email)
+      return Response.redirect("https://radar.codemeoww.com/login", 302);
+    let tgUrl = null;
+    if (env && env.KV) {
+      const t = randHex(16);
+      await env.KV.put("tglink:" + t, JSON.stringify({ email }), { expirationTtl: 900 });
+      tgUrl = "https://t.me/games_loot_bot?start=" + t;
+    }
+    return finalize(pageHTML("Pro dashboard: Loot Radar", "Manage your Loot Radar Pro alerts and Telegram connection.", "/pro") + await proHTML(env, email, tgUrl) + "</body></html>");
+  }
+  if (path === "/pricing") {
+    return cachedPage(request, ctx, async () => finalize(pageHTML("Pro pricing: Loot Radar", "Loot Radar Pro: fast Telegram alerts and a daily email digest for free games and deals that match your alert settings. $4/month or $39/year.", "/pricing") + pricingPageHTML() + "</body></html>"));
+  }
+  if (path === "/faq") {
+    return cachedPage(request, ctx, async () => finalize(pageHTML("FAQ: Loot Radar", "How Loot Radar works: Pro alerts, Telegram setup, the API, cancelling, refunds.", "/faq") + faqPageHTML() + "</body></html>"));
+  }
+  if (path === "/about") {
+    return cachedPage(request, ctx, async () => finalize(pageHTML("About: Loot Radar", "What Loot Radar is, how it tracks free PC games and Steam deals, and who runs it.", "/about") + aboutPageHTML() + "</body></html>"));
+  }
+  if (path === "/terms") {
+    return cachedPage(request, ctx, async () => finalize(pageHTML("Terms of service: Loot Radar", "Loot Radar terms of service: Pro subscriptions, no-refund policy, API fair use.", "/terms") + termsPageHTML() + "</body></html>"));
+  }
+  if (path === "/privacy") {
+    return cachedPage(request, ctx, async () => finalize(pageHTML("Privacy policy: Loot Radar", "Loot Radar privacy policy: what we collect, what we never do, your rights.", "/privacy") + privacyPageHTML() + "</body></html>"));
+  }
+  if (path === "/refunds") {
+    return cachedPage(request, ctx, async () => finalize(pageHTML("Refund policy: Loot Radar", "Loot Radar Pro sales are final and non-refundable. Cancel anytime.", "/refunds") + refundsPageHTML() + "</body></html>"));
+  }
+  if (path === "/api/docs") {
+    return cachedPage(request, ctx, async () => finalize(pageHTML("API docs: Loot Radar", "Loot Radar Pro API: live deals and freebies feeds as JSON. Authentication, endpoints, rate limits.", "/api/docs") + apiDocsPageHTML() + "</body></html>"));
+  }
+  if (path.indexOf("/api/telegram/hook/") === 0) {
+    const secret = path.slice("/api/telegram/hook/".length);
+    if (!secret || secret !== (env && env.TELEGRAM_WEBHOOK_SECRET || "unset")) {
+      return new Response("not found", { status: 404 });
+    }
+    if (request.method !== "POST")
+      return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
+    let update = null;
+    try {
+      update = await request.json();
+    } catch (e) {
+    }
+    const msg = update && update.message;
+    const text = msg && msg.text || "";
+    const chatId = msg && msg.chat && msg.chat.id;
+    const m = text.match(/^\/start\s+([0-9a-f]{32})/);
+    if (m && chatId && env && env.KV && env.DB) {
+      const rec = await env.KV.get("tglink:" + m[1], "json");
+      if (rec && rec.email) {
+        await env.KV.delete("tglink:" + m[1]);
+        const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+        try {
+          await env.DB.prepare("UPDATE customers SET telegram_chat_id = NULL, updated_at = ? WHERE telegram_chat_id = ? AND email != ?").bind(nowIso, String(chatId), rec.email).run();
+        } catch (e) {
+        }
+        await env.DB.prepare("UPDATE customers SET telegram_chat_id = ?, updated_at = ? WHERE email = ?").bind(String(chatId), nowIso, rec.email).run();
+        ctx.waitUntil(sendTelegram(
+          env,
+          chatId,
+          "\u{1F3AE} <b>Loot Radar connected!</b>\n\nYou'll get fast alerts here, usually within 20 minutes of a drop, one message per scan.\n\nTune what you get with /prefs, or anytime at radar.codemeoww.com/pro\n\nHappy hunting!"
+        ));
+      }
+    } else if (text === "/start" && chatId) {
+      ctx.waitUntil(sendTelegram(
+        env,
+        chatId,
+        "\u{1F44B} Welcome to Loot Radar!\n\nTo link your Pro subscription, log in at https://radar.codemeoww.com/login and tap <b>Connect Telegram</b> in your dashboard."
+      ));
+    } else if (chatId && text.charAt(0) === "/") {
+      const reply = await handleTelegramCommand(env, chatId, text);
+      if (reply)
+        ctx.waitUntil(sendTelegram(env, chatId, reply));
+    }
+    return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
+  }
+  if (path === "/" || path === "/index.html") {
+    return cachedPage(request, ctx, async () => {
+      const [freebies, deals] = await Promise.all([getFreebies(ctx), getDeals(ctx)]);
+      return finalize(pageHTML(null, null, "/", jsonLD(freebies)) + homeHTML(freebies, deals) + "</body></html>");
+    });
+  }
+  if (path === "/deals") {
+    return cachedPage(request, ctx, async () => {
+      const deals = await getDeals(ctx);
+      return finalize(pageHTML("Steam deals: Loot Radar", "Every Steam deal tracked by Loot Radar, sorted by biggest discount first.", "/deals") + dealsPageHTML(deals) + "</body></html>");
+    });
+  }
+  if (path === "/freebies") {
+    return cachedPage(request, ctx, async () => {
+      const freebies = await getFreebies(ctx);
+      return finalize(pageHTML("Free PC games: Loot Radar", "Every free-to-claim PC game live right now, tracked by Loot Radar.", "/freebies") + freebiesPageHTML(freebies) + "</body></html>");
+    });
+  }
+  return finalize(
+    pageHTML("Not found: Loot Radar", "This page doesn't exist.", "/") + `<div class="wrap" style="padding:80px 22px;text-align:center"><h1>404: not found</h1><p class="sec-sub" style="text-align:center">This page doesn't exist.</p><a class="btn" href="/">Back to loot</a></div></body></html>`,
+    404
+  );
+}
+async function handleScheduled(event, env, ctx) {
+  if (event && event.cron === "30 3 * * *")
+    ctx.waitUntil(sendDailyDigest(env));
+  else
+    ctx.waitUntil(pollAndAlert(env));
+}
+
+// src/index.js
+var src_default = {
+  fetch: handleFetch,
+  scheduled: handleScheduled
+};
+export {
+  src_default as default
+};

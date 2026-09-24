@@ -131,17 +131,21 @@ export async function handleFetch(request, env, ctx) {
     }
     const raw = await request.text();
     const secret = (env && env.DODO_WEBHOOK_SECRET) || "";
-    let verified = false;
-    if (secret) {
-      const v = await verifyDodoWebhook(request, raw, secret);
-      verified = v.ok;
-      if (!verified) {
-        return new Response(JSON.stringify({ error: "bad signature", reason: v.reason }), {
-          status: 401,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
+    // Fail closed: without a configured secret, no payment events get processed.
+    if (!secret) {
+      return new Response(JSON.stringify({ error: "webhook not configured" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
     }
+    const v = await verifyDodoWebhook(request, raw, secret);
+    if (!v.ok) {
+      return new Response(JSON.stringify({ error: "bad signature", reason: v.reason }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const verified = true;
     let evt = null;
     try { evt = JSON.parse(raw); } catch (e) { /* ignore */ }
     const type = (evt && (evt.type || evt.event)) || "unknown";
@@ -184,7 +188,7 @@ export async function handleFetch(request, env, ctx) {
   }
   if (path === "/sitemap.xml") {
     const urls = ["", "deals", "freebies", "pricing", "faq", "about", "terms", "privacy", "refunds", "login", "api/docs"].map(p =>
-      "<url><loc>https://radar.codemeoww.com/" + p + "</loc><lastmod>2026-09-22</lastmod></url>").join("");
+      "<url><loc>https://radar.codemeoww.com/" + p + "</loc><lastmod>2026-09-24</lastmod></url>").join("");
     return new Response('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + urls + "</urlset>", {
       headers: { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, max-age=86400" },
     });
