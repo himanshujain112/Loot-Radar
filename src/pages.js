@@ -166,7 +166,6 @@ export function pageHTML(title, desc, path, headExtra, opts) {
     ".hero h1{font-size:clamp(1.9rem,4.4vw,2.7rem);line-height:1.12;letter-spacing:-.5px;margin:10px 0 12px;max-width:22em}" +
     ".hero p.sub{color:var(--mut);font-size:1.02rem;max-width:38rem;margin-bottom:22px}" +
     ".hero-cta{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px}" +
-    ".hero-free{color:var(--mut);font-size:.86rem;margin:-8px 0 14px;max-width:38rem}" +
     /* page heads */
     ".pagehead{padding:36px 0 2px}" +
     ".pagehead h1{font-size:clamp(1.6rem,3.6vw,2.2rem);letter-spacing:-.5px;margin:10px 0 10px}" +
@@ -349,7 +348,6 @@ export function homeHTML(freebies, deals, loggedIn) {
     '<p class="sub">Track free PC games, deep discounts, and limited time deals across multiple stores including steam, epic games, GOG and more, all in one place, updated every 20 min!</p>' +
     '<div class="hero-cta"><a class="btn" href="/freebies">See what\'s free</a>' +
     '<a class="btn ghost" href="/deals">Browse today\'s deals</a></div>' +
-    '<p class="hero-free">free accounts get one loot summary a day. pro gets alerts fast, usually within 20 minutes.</p>' +
     urgLine +
   "</header>" +
 
@@ -808,7 +806,7 @@ function connCard(st, tgUrl) {
     "catch(e){m.textContent='⚠ Could not disconnect';}}</script>";
   const dcScript = "<script>async function dcUnlink(){if(!confirm('Disconnect Discord? You can reconnect anytime.'))return;" +
     "var m=document.getElementById('dc_msg');m.textContent='…';" +
-    "try{var r=await fetch('/api/discord/unlink',{method:'POST'});if(r.ok)location.reload();else m.textContent='⚠ Could not disconnect';}}" +
+    "try{var r=await fetch('/api/discord/unlink',{method:'POST'});if(r.ok)location.reload();else m.textContent='⚠ Could not disconnect';}" +
     "catch(e){m.textContent='⚠ Could not disconnect';}}" +
     "if(new URLSearchParams(location.search).get('dm')==='failed'){var w=document.createElement('p');w.className='sec-sub';w.style.color='#ff8a8a';" +
     "w.innerHTML='Heads up: the bot could not DM you. <a href=\"https://discord.gg/eCB9rx9b8B\" target=\"_blank\" rel=\"noopener\" style=\"color:#ff8a8a\">Join our Discord server</a> and allow DMs from server members, then reconnect.';" +
