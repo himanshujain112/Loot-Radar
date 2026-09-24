@@ -1,44 +1,42 @@
 # Loot Radar
 
-**Free PC games, before they're gone.** Live at https://radar.codemeoww.com
+**Never miss a free game again.**
 
-Loot Radar tracks free-to-claim PC games and steep PC discounts across 14 storefronts, refreshing every 20 minutes. Browsing is free forever. Loot Radar Pro ($4/mo or $39/yr via DodoPayments) adds fast Telegram alerts (usually within 20 minutes), a daily email digest at 9 AM IST, wishlist price watch, and a Pro API.
+Loot Radar tracks free Steam, Epic, and GOG games plus PC deals, checking every 20 minutes. The web app is free forever. Pro members get fast alerts on Telegram the moment something drops, before it's gone.
 
-## Architecture
+Live at [radar.codemeoww.com](https://radar.codemeoww.com)
 
-Cloudflare Worker (`game-radar`), plain JavaScript ES modules in `src/`, bundled with esbuild into a single file for upload.
+## The story
+
+This was built by **Darlin**, the personal Muse AI agent of [Himanshu](https://codemeoww.com) (aka Codemeoww), as part of a 30-day challenge: build a $100/month business from scratch, no shortcuts. It went live, it worked, and now it's open source. Use it however you want.
+
+## Help finish the challenge
+
+The dare is $100/month in 30 days. You can help me get there:
+
+- **Go Pro, $4/month** (or $39/year): fast Telegram alerts usually within 20 minutes, wishlist price tracking, and a Pro API with live deals, freebies, game search, and stores as JSON.
+- **Or just use it free.** The web app costs nothing and that's not changing.
+
+[Get Pro at radar.codemeoww.com/pricing](https://radar.codemeoww.com/pricing)
+
+## Alerts
+
+Frequent alerts are live on Telegram: [@games_loot_bot](https://t.me/games_loot_bot). One optional daily digest email instead, if that's more your speed.
+
+I'm open to integrating more platforms, including Discord. If you want alerts somewhere else, open an issue and tell me where.
+
+## Run it yourself
+
+Cloudflare Worker (plain JavaScript ES modules, bundled with esbuild). Data from GamerPower (freebies) and CheapShark (deals). Storage is Cloudflare D1 + KV. Payments are DodoPayments.
 
 ```
-src/
-  index.js    worker entrypoint: export default { fetch, scheduled }
-  router.js   fetch handler (all routes) + scheduled cron handler
-  config.js   constants: feed URLs, UA, cache TTL, store directory
-  util.js     esc, randHex, sha256hex, cookies, title/expiry helpers
-  cache.js    in-memory cache + Cache API wrapper (fetchCached)
-  feeds.js    GamerPower + CheapShark fetchers and normalizers, Pro API logic
-  auth.js     sessions, Pro status, wishlist reads, API key auth + rate limit
-  alerts.js   loot aggregation, dedup ledger, Telegram poller, digest, prefs, bot commands
-  notify.js   Resend email + Telegram Bot API senders
-  payments.js DodoPayments webhook signature verification
-  emails.js   email templates: shell, magic link, daily digest
-  pages.js    all HTML pages, nav, footer, FAQ data
+src/            12 modules: config, feeds, pages, alerts, auth, payments, emails, notify, cache, util, router, index
+schema.sql      D1 tables
+deploy.py       builds, deploys the worker, then auto-pushes to GitHub
+gh_push.py      pushes the tree to GitHub via the API
+analytics.md    daily traffic log (Microsoft Clarity)
 ```
 
-`dist/worker.js` is the built bundle (gitignored, rebuilt on every deploy). The old monolithic `worker.js` and all `worker.js.bak-*` snapshots live in `~/workspace/loot-radar-backups/` for reference and rollback.
+Deploy: `python3 deploy.py` (needs Cloudflare credentials).
 
-## Deploy
-
-```bash
-cd ~/workspace/loot-radar
-python3 deploy.py
-```
-
-`deploy.py` runs `npm run build` first, then uploads `dist/worker.js` to the `game-radar` worker with its D1/KV bindings and cron triggers (`*/20 * * * *`, `30 3 * * *`) via multipart upload. Same metadata, bindings and crons as before, every time.
-
-## Secrets
-
-All secrets live in the Cloudflare dashboard as worker secrets/env vars: `RESEND_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `DODO_WEBHOOK_SECRET`, plus the D1 (`loot-radar-db`) and KV (`loot-radar-kv`) bindings. Nothing secret is in this repo, ever. DB schema is in `schema.sql`.
-
-## Analytics
-
-`analytics.md` is a daily traffic log (Microsoft Clarity Data Export API), one row per day, kept next to the code so history survives Clarity's 3-day API window.
+All secrets (Resend key, Telegram bot token, Dodo webhook secret) live as Worker environment variables in the Cloudflare dashboard. Nothing secret is in this repo, ever.
