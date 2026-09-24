@@ -123,6 +123,9 @@ export function pageHTML(title, desc, path, headExtra, opts) {
     ".btn.disabled{background:#1a2440;color:var(--mut);cursor:not-allowed}" +
     /* dashboard */
     ".dash-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px;max-width:640px;margin:16px auto 0;text-align:left}" +
+    "#toast_wrap{position:fixed;top:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:min(320px,calc(100vw - 32px))}" +
+    ".toast{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--grn);color:var(--txt);padding:10px 14px;border-radius:8px;font-size:.86rem;box-shadow:0 8px 24px rgba(0,0,0,.45);opacity:0;transform:translateX(12px);transition:opacity .25s,transform .25s}" +
+    ".toast.show{opacity:1;transform:none}" +
     ".dash-card.locked{position:relative}" +
     ".lockwrap{position:relative;pointer-events:none;user-select:none;filter:saturate(.4);opacity:.55}" +
     ".lock-tag{position:absolute;top:14px;right:16px;z-index:2;font-size:.72rem;font-weight:700;letter-spacing:.04em;color:#0b0e0b;background:var(--grn);border-radius:20px;padding:4px 12px}" +
@@ -733,7 +736,7 @@ export function prefsCard(p) {
     "deal_stores:selStores,min_discount:parseInt(document.getElementById('pf_minoff').value,10),deals_mode:document.getElementById('pf_mode').value," +
     "digest_email:document.getElementById('pf_digest').checked};" +
     "try{var r=await fetch('/api/alerts/prefs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});" +
-    "var d=await r.json();m.textContent=d.ok?'Saved':('Could not save: '+(d.error||'try again'));}catch(e){m.textContent='Could not save, try again';}}" +
+    "var d=await r.json();if(d.ok){m.textContent='';toast('Preferences updated.');}else{m.textContent='Could not save: '+(d.error||'try again');}}catch(e){m.textContent='Could not save, try again';}}" +
     "</script>" +
     "</div>";
 }
@@ -755,7 +758,7 @@ export function wishlistCard(items) {
     "var wlT=document.getElementById('wlt'),wlDrop=document.getElementById('wl_drop'),wlTimer=null;" +
     "function wlEsc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\x22/g,'&quot;');}" +
     "function wlAddTitle(t,th){t=(t||'').trim().slice(0,120);if(!t)return;wlDrop.classList.remove('open');" +
-    "fetch('/api/wishlist/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:t,thumb:(th||'').slice(0,500)})}).then(function(){location.reload();});}" +
+    "fetch('/api/wishlist/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:t,thumb:(th||'').slice(0,500)})}).then(function(){location.href='/dashboard?toast=wishlist-added';});}" +
     "wlT.addEventListener('input',function(){clearTimeout(wlTimer);var q=wlT.value.trim();" +
     "if(q.length<2){wlDrop.classList.remove('open');return;}" +
     "wlTimer=setTimeout(function(){" +
@@ -771,7 +774,7 @@ export function wishlistCard(items) {
     "},250);});" +
     "wlT.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();wlAddTitle(wlT.value);}});" +
     "document.addEventListener('click',function(e){if(!e.target.closest('#wl_combo'))wlDrop.classList.remove('open');});" +
-    "async function wlDel(b){var r=await fetch('/api/wishlist/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:b.getAttribute('data-t')})});if(r.ok)location.reload();}" +
+    "async function wlDel(b){var r=await fetch('/api/wishlist/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:b.getAttribute('data-t')})});if(r.ok)location.href='/dashboard?toast=wishlist-removed';}" +
     "</script>" +
     "</div>";
 }
@@ -789,17 +792,17 @@ export function apiKeyCard(keys) {
     '<button class="btn small" onclick="keyCreate()">Create new key</button>' +
     "<script>" +
     "async function keyCreate(){var r=await fetch('/api/apikey/create',{method:'POST'});var d=await r.json();" +
-    "if(d.key){document.getElementById('newkey').innerHTML='<div class=\"keybox\"><code>'+d.key+'</code></div><p class=\"sec-sub\">Copy it now. It is shown only once.</p>';}" +
+    "if(d.key){document.getElementById('newkey').innerHTML='<div class=\"keybox\"><code>'+d.key+'</code></div><p class=\"sec-sub\">Copy it now. It is shown only once.</p>';toast('API key created.');}" +
     "else{alert(d.error||'Could not create key');}}" +
     "async function keyRevoke(p){if(!confirm('Revoke key '+p+'…?'))return;" +
     "var r=await fetch('/api/apikey/revoke',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prefix:p})});" +
-    "if(r.ok)location.reload();}" +
+    "if(r.ok)location.href='/dashboard?toast=key-revoked';}" +
     "</script>" +
     "</div>";
 }
 
 // Connections card shared by the Pro and free dashboard views.
-function connCard(st, tgUrl, unlinked) {
+function connCard(st, tgUrl) {
   const tgScript = "<script>async function tgUnlink(){if(!confirm('Disconnect Telegram? You won\\'t get loot alerts here anymore. You can reconnect the same or a different account anytime.'))return;" +
     "var m=document.getElementById('tg_msg');m.textContent='…';" +
     "try{var r=await fetch('/api/telegram/unlink',{method:'POST'});if(r.ok)location.href='/dashboard?unlinked=telegram';else m.textContent='⚠ Could not disconnect';}" +
@@ -811,13 +814,7 @@ function connCard(st, tgUrl, unlinked) {
     "if(new URLSearchParams(location.search).get('dm')==='failed'){var w=document.createElement('p');w.className='sec-sub';w.style.color='#ff8a8a';" +
     "w.innerHTML='Heads up: the bot could not DM you. <a href=\"https://discord.gg/eCB9rx9b8B\" target=\"_blank\" rel=\"noopener\" style=\"color:#ff8a8a\">Join our Discord server</a> and allow DMs from server members, then reconnect.';" +
     "var s=document.getElementById('dc_msg');if(s&&s.parentNode)s.parentNode.insertBefore(w,s);}</script>";
-  const unlinkedNote = unlinked === "telegram"
-    ? '<p class="sec-sub" style="color:#ffb86b">Telegram disconnected. No more loot alerts there until you reconnect.</p>'
-    : unlinked === "discord"
-    ? '<p class="sec-sub" style="color:#ffb86b">Discord disconnected. No more loot alerts there until you reconnect.</p>'
-    : "";
   return '<div class="dash-card"><h3>Connections</h3>' +
-    unlinkedNote +
     '<p class="dash-sub">Where your loot alerts land.</p>' +
     '<div class="conn-row"><div class="lbl"><b>Telegram' + (st.telegram ? ' <span class="badge free">connected</span>' : "") + "</b>" +
     "<span>" + (st.telegram ? "Loot alerts land in your Telegram." : "Connect to get loot alerts.") + "</span></div>" +
@@ -837,7 +834,7 @@ function lockedCard(cardHtml) {
   return '<div class="lockwrap" title="Pro required"><span class="lock-tag">Pro required</span>' + cardHtml + "</div>";
 }
 
-export async function proHTML(env, email, tgUrl, unlinked) {
+export async function proHTML(env, email, tgUrl) {
   const st = await proStatus(env, email);
   let wlItems = [];
   let apiKeys = [];
@@ -861,7 +858,7 @@ export async function proHTML(env, email, tgUrl, unlinked) {
       '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
       '<a class="btn" href="https://checkout.dodopayments.com/buy/pdt_0No6epRAEDlFPuD8vFMT3?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">$4/mo</a>' +
       '<a class="btn ghost" href="https://checkout.dodopayments.com/buy/pdt_0No6f9EaIF1CMH6wKBTVl?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">$39/yr</a></div></div>' +
-      connCard(st, tgUrl, unlinked) +
+      connCard(st, tgUrl) +
       lockedCard(prefsCard(prefs)) + lockedCard(wishlistCard(wlItems)) + lockedCard(apiKeyCard(apiKeys));
   } else {
     const planLbl = st.plan === "monthly" ? "$4/mo" : st.plan === "yearly" ? "$39/yr" : (st.plan ? esc(st.plan) : "");
@@ -874,9 +871,28 @@ export async function proHTML(env, email, tgUrl, unlinked) {
       '</div><a class="btn small" href="https://customer.dodopayments.com/login/bus_7luSWgVDKIjPXyCqUmjfn" target="_blank" rel="noopener">Manage billing</a></div>' +
       '<p class="fine" style="margin:10px 0 0;font-size:.8rem;color:var(--mut)">Renewal date, invoices, payment method and cancellation live in the billing portal.</p>' +
       '</div>' +
-      connCard(st, tgUrl, unlinked) + prefsCard(prefs) + wishlistCard(wlItems) + apiKeyCard(apiKeys);
+      connCard(st, tgUrl) + prefsCard(prefs) + wishlistCard(wlItems) + apiKeyCard(apiKeys);
   }
   return navHTML("/dashboard", true) +
+    '<div id="toast_wrap"></div>' +
+    "<script>" +
+    "window.toast=function(msg,ms){var w=document.getElementById('toast_wrap');if(!w)return;" +
+    "var t=document.createElement('div');t.className='toast';t.textContent=msg;w.appendChild(t);" +
+    "setTimeout(function(){t.classList.add('show');},20);" +
+    "setTimeout(function(){t.classList.remove('show');setTimeout(function(){t.remove();},300);},ms||3200);};" +
+    "(function(){var q=new URLSearchParams(location.search);var msgs=[];" +
+    "if(q.get('unlinked')==='telegram')msgs.push('Telegram disconnected. No more alerts there until you reconnect.');" +
+    "if(q.get('unlinked')==='discord')msgs.push('Discord disconnected. No more alerts there until you reconnect.');" +
+    "if(q.get('discord')==='ok')msgs.push('Discord connected.');" +
+    "if(q.get('dm')==='failed')msgs.push('Heads up: the bot could not DM you. Join the Discord server and allow DMs from server members, then reconnect.');" +
+    "if(q.get('join')==='failed')msgs.push('Could not add you to the Discord server automatically.');" +
+    "var tm=q.get('toast');" +
+    "if(tm==='wishlist-added')msgs.push('Added to wishlist.');" +
+    "if(tm==='wishlist-removed')msgs.push('Removed from wishlist.');" +
+    "if(tm==='key-revoked')msgs.push('API key revoked.');" +
+    "if(msgs.length){try{history.replaceState(null,'',location.pathname);}catch(e){}" +
+    "msgs.forEach(function(m,i){setTimeout(function(){toast(m);},i*450);});}})();" +
+    "</script>" +
     '<div class="wrap"><div class="pagehead" style="text-align:center">' +
     '<h1>Dashboard</h1></div>' + inner +
     '<div style="text-align:center;margin-top:26px"><button class="btn small ghost" onclick="fetch(\'/api/auth/logout\',{method:\'POST\'}).then(function(){location.href=\'/\';})">Log out</button></div></div>' +

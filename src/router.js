@@ -480,7 +480,7 @@ export async function handleFetch(request, env, ctx) {
       tgUrl = "https://t.me/games_loot_bot?start=" + t;
     }
     return finalize(pageHTML("Dashboard: Loot Radar", "Manage your Loot Radar alerts and Telegram/Discord connections.", "/dashboard", null, { noindex: true }) +
-      await proHTML(env, email, tgUrl, url.searchParams.get("unlinked") || "") + "</body></html>");
+      await proHTML(env, email, tgUrl) + "</body></html>");
   }
   if (path === "/pricing") {
     const li = await pageLoggedIn(request, env);
