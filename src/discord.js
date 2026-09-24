@@ -151,18 +151,21 @@ export async function sendDiscordChannel(env, channelId, text) {
 }
 export function alertDigestDiscord(items) {
   const n = items.length;
+  const t = function (s) { return String(s || "").replace(/[\[\]]/g, ""); }; // keep [..](..) links intact
   let out = "🎮 **Loot Radar: " + n + " new drop" + (n === 1 ? "" : "s") + "**";
   for (const it of items) {
+    const title = it.url ? "[**" + t(it.title) + "**](" + it.url + ")" : "**" + t(it.title) + "**";
     if (it.kind === "deal") {
-      out += "\n\n**" + it.title + "**\n" +
+      out += "\n\n" + title + "\n" +
         "🔥 " + it.savings + "% off · " + (it.store || "PC") + "\n" +
         "~~$" + it.normal + "~~ → **$" + it.sale + "**" +
         (it.isNewLow ? "\n🏆 **lowest price ever tracked**" : "");
     } else {
       const meta = [it.worth ? "worth " + it.worth : "", it.ends ? "ends " + it.ends : "", it.platforms ? it.platforms : ""]
         .filter(function (x) { return !!x; }).join(" · ");
-      out += "\n\n**" + it.title + "**\n🎯 **FREE**" + (meta ? " · " + meta : "");
+      out += "\n\n" + title + "\n🎯 **FREE**" + (meta ? " · " + meta : "");
     }
   }
+  out += "\n\n🌐 [Browse all drops](https://radar.codemeoww.com/deals)";
   return out;
 }
