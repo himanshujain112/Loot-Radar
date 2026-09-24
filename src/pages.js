@@ -403,7 +403,7 @@ export function pricingPageHTML() {
     '<a class="btn ghost" href="/freebies">Browse free loot</a></div>' +
     '<div class="plan pro"><h3>Hunter <span class="badge free">Pro</span></h3>' +
     '<div class="p">$4<small> / month</small></div><div class="per">or <b>$39/yr</b> ($3.25/mo). Two months free.</div>' +
-    "<ul><li>Everything in Scout</li><li>Fast Telegram alerts</li><li>Daily email digest</li>" +
+    "<ul><li>Everything in Scout</li><li>Fast Telegram or Discord alerts</li><li>Daily email digest</li>" +
     "<li>Every freebie + every deal matching your alert settings</li><li>Wishlist price watch</li><li>All-time low price alerts</li><li>Pro API access for the deals & freebies feeds</li><li>Support indie radar development</li></ul>" +
     '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
     '<a class="btn" href="https://checkout.dodopayments.com/buy/pdt_0No6epRAEDlFPuD8vFMT3?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">Monthly: $4/mo</a>' +
@@ -647,7 +647,7 @@ export function prefsCard(p) {
   };
   return '<div class="dash-card">' +
     "<h3>Alert preferences</h3>" +
-    '<p class="dash-sub">Fast Telegram alerts, one message per scan, only what you pick. You can also change these from Telegram with /prefs.</p>' +
+    '<p class="dash-sub">Fast alerts on Telegram and Discord, one message per scan, only what you pick. You can also change these from Telegram with /prefs.</p>' +
     tg("pf_freebies", p.alert_freebies, "free-to-claim game alerts", "Get pinged the moment a free-to-claim game drops.") +
     tg("pf_deals", p.alert_deals, "Discount alerts", "Price cuts that match your stores, min discount and mode below.") +
     '<div class="dash-sec">Stores for discount alerts</div>' +
@@ -782,6 +782,17 @@ export async function proHTML(env, email, tgUrl) {
           "catch(e){m.textContent='⚠ Could not disconnect';}}</script>"
         : '<p class="sec-sub" style="text-align:center">Connect Telegram to get fast loot alerts:</p>' +
           (tgUrl ? '<a class="btn" href="' + tgUrl + '" target="_blank" rel="noopener">Connect Telegram</a>' : "")) +
+      '<div style="margin-top:14px">' +
+      (st.discord
+        ? '<p><span class="badge free">Discord connected</span></p><p class="sec-sub" style="text-align:center">Loot alerts will land in your Discord DMs.</p>' +
+          '<button class="btn small ghost" onclick="dcUnlink()">Disconnect Discord</button> <span id="dc_msg" class="sec-sub"></span>' +
+          "<script>async function dcUnlink(){if(!confirm('Disconnect Discord? You can reconnect anytime.'))return;" +
+          "var m=document.getElementById('dc_msg');m.textContent='…';" +
+          "try{var r=await fetch('/api/discord/unlink',{method:'POST'});if(r.ok)location.reload();else m.textContent='⚠ Could not disconnect';}" +
+          "catch(e){m.textContent='⚠ Could not disconnect';}}</script>"
+        : '<p class="sec-sub" style="text-align:center">Or get alerts in your Discord DMs:</p>' +
+          '<a class="btn" href="/api/discord/connect">Connect Discord</a>') +
+      '</div>' +
       "</div>" + prefsCard(prefs) + wishlistCard(wlItems) + apiKeyCard(apiKeys);
   }
   return navHTML("/pro") +

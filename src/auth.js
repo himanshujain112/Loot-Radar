@@ -18,8 +18,8 @@ export async function proStatus(env, email) {
   if (!env || !env.DB || !email) return { pro: false, plan: null, telegram: false };
   const hit = memGet("pro:" + email);
   if (hit) return hit;
-  const row = await env.DB.prepare("SELECT pro, plan, telegram_chat_id FROM customers WHERE email = ?").bind(email).first();
-  const st = { pro: !!(row && row.pro), plan: (row && row.plan) || null, telegram: !!(row && row.telegram_chat_id) };
+  const row = await env.DB.prepare("SELECT pro, plan, telegram_chat_id, discord_user_id FROM customers WHERE email = ?").bind(email).first();
+  const st = { pro: !!(row && row.pro), plan: (row && row.plan) || null, telegram: !!(row && row.telegram_chat_id), discord: !!(row && row.discord_user_id) };
   memPut("pro:" + email, st, 120); // webhook flips propagate within ~2 min
   return st;
 }

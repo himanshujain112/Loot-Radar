@@ -11,6 +11,7 @@ import { cleanTitle, esc } from "./util.js";
 import { memGet, memPut } from "./cache.js";
 import { storeUrl } from "./feeds.js";
 import { sendTelegram, sendEmail } from "./notify.js";
+import { sendDiscordDM, alertDigestDiscord } from "./discord.js";
 import { dailyDigestEmail } from "./emails.js";
 
 // Store names for alert payloads, with hardcoded fallbacks for the three alert stores.
@@ -350,14 +351,14 @@ export async function pollAndAlert(env) {
   try { await env.DB.prepare("DELETE FROM sent_alerts WHERE sent_at < datetime('now','-180 days')").run(); } catch (e) {}
   let users = [];
   try {
-    const q = await env.DB.prepare("SELECT email, telegram_chat_id, alert_freebies, alert_deals, deal_stores, min_discount, deals_mode FROM customers WHERE pro = 1").all();
+    const q = await env.DB.prepare("SELECT email, telegram_chat_id, discord_user_id, alert_freebies, alert_deals, deal_stores, min_discount, deals_mode FROM customers WHERE pro = 1").all();
     users = (q && q.results) || [];
   } catch (e) { return; }
   // Fetch deals only for the stores somebody actually wants, one upstream
   // request per store, shared across all users.
   const wanted = {};
   for (const u of users) {
-    if (!u.telegram_chat_id) continue;
+    if (!u.telegram_chat_id && !u.discord_user_id) continue;
     const p = normPrefs(u);
     if (p.alert_deals) for (const s of p.deal_stores) wanted[s] = 1;
   }
@@ -366,7 +367,8 @@ export async function pollAndAlert(env) {
   await tagNewLows(env, loot.deals);
   for (const u of users) {
     const chatId = u.telegram_chat_id ? String(u.telegram_chat_id) : null;
-    if (!chatId) continue;
+    const dcId = u.discord_user_id ? String(u.discord_user_id) : null;
+    if (!chatId && !dcId) continue;
     const prefs = normPrefs(u);
     let items = [];
     if (prefs.alert_freebies) items = items.concat(loot.freebies);
@@ -385,15 +387,31 @@ export async function pollAndAlert(env) {
       items = items.concat(deals);
     }
     if (!items.length) continue;
-    // Claim everything new, then send ONE message for the whole scan.
-    const fresh = [];
-    for (const it of items) {
-      if (fresh.length >= 8) break;
-      if (await claimItem(env, chatId, it)) fresh.push(it);
+    // Claim everything new, then send ONE message per channel for the whole scan.
+    // Telegram and Discord claim separately so one channel never eats the other's alert.
+    if (chatId) {
+      const fresh = [];
+      for (const it of items) {
+        if (fresh.length >= 8) break;
+        if (await claimItem(env, chatId, it)) fresh.push(it);
+      }
+      if (fresh.length) {
+        const ok = await sendTelegram(env, chatId, alertDigestCaption(fresh), alertButtons(fresh));
+        if (!ok) for (const it of fresh) await releaseClaim(env, chatId, it);
+      }
     }
-    if (!fresh.length) continue;
-    const ok = await sendTelegram(env, chatId, alertDigestCaption(fresh), alertButtons(fresh));
-    if (!ok) for (const it of fresh) await releaseClaim(env, chatId, it);
+    if (dcId && env.DISCORD_BOT_TOKEN) {
+      const dcKey = "dc:" + dcId;
+      const freshDc = [];
+      for (const it of items) {
+        if (freshDc.length >= 8) break;
+        if (await claimItem(env, dcKey, it)) freshDc.push(it);
+      }
+      if (freshDc.length) {
+        const ok = await sendDiscordDM(env, dcId, alertDigestDiscord(freshDc));
+        if (!ok) for (const it of freshDc) await releaseClaim(env, dcKey, it);
+      }
+    }
   }
 }
 export async function handleTelegramCommand(env, chatId, text) {

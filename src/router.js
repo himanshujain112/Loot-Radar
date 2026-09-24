@@ -12,6 +12,7 @@ import { sessionEmail, proStatus, apiKeyAuth, rateOk } from "./auth.js";
 import { verifyDodoWebhook, dodoCustomerEmail } from "./payments.js";
 import { sendEmail, sendTelegram } from "./notify.js";
 import { setPrefs, handleTelegramCommand, pollAndAlert, sendDailyDigest, attachGameLows } from "./alerts.js";
+import { discordAuthorizeUrl, discordExchangeCode, discordOAuthUser, sendDiscordDM } from "./discord.js";
 import { magicLinkEmail } from "./emails.js";
 import {
   pageHTML, homeHTML, dealsPageHTML, freebiesPageHTML, pricingPageHTML,
@@ -234,7 +235,7 @@ export async function handleFetch(request, env, ctx) {
   if (path === "/api/auth/me") {
     const email = await sessionEmail(request, env);
     const st = await proStatus(env, email);
-    return new Response(JSON.stringify({ email: email, pro: st.pro, plan: st.plan, telegram: st.telegram }), {
+    return new Response(JSON.stringify({ email: email, pro: st.pro, plan: st.plan, telegram: st.telegram, discord: st.discord }), {
       headers: { "Content-Type": "application/json" },
     });
   }
@@ -278,6 +279,51 @@ export async function handleFetch(request, env, ctx) {
     if (!email) return new Response(JSON.stringify({ ok: false, error: "login required" }), { status: 401, headers: { "Content-Type": "application/json" } });
     if (env && env.DB) {
       try { await env.DB.prepare("UPDATE customers SET telegram_chat_id = NULL, updated_at = ? WHERE email = ?").bind(new Date().toISOString(), email).run(); } catch (e) {}
+    }
+    return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
+  }
+  // ---------- Discord connect (OAuth2) + DMs ----------
+  if (path === "/api/discord/connect") {
+    const email = await sessionEmail(request, env);
+    const st = await proStatus(env, email);
+    if (!email || !st.pro) return new Response("Pro required", { status: 403 });
+    if (!env.DISCORD_BOT_TOKEN || !env.DISCORD_CLIENT_SECRET) {
+      return new Response("Discord is not configured yet", { status: 503 });
+    }
+    const state = randHex(16);
+    try { await env.KV.put("discord:oauth:" + state, email, { expirationTtl: 600 }); } catch (e) {}
+    return Response.redirect(discordAuthorizeUrl(env, state), 302);
+  }
+  if (path === "/api/discord/callback") {
+    const code = url.searchParams.get("code") || "";
+    const state = url.searchParams.get("state") || "";
+    let email = null;
+    try { email = state ? await env.KV.get("discord:oauth:" + state) : null; } catch (e) {}
+    if (state) { try { await env.KV.delete("discord:oauth:" + state); } catch (e) {} }
+    const fail = () => Response.redirect("https://radar.codemeoww.com/pro?discord=error", 302);
+    if (!email || !code) return fail();
+    const tok = await discordExchangeCode(env, code);
+    const du = tok && tok.access_token ? await discordOAuthUser(tok.access_token) : null;
+    if (!du || !du.id) return fail();
+    try {
+      await env.DB.prepare("UPDATE customers SET discord_user_id = ?, updated_at = ? WHERE email = ?")
+        .bind(String(du.id), new Date().toISOString(), email).run();
+      memDel("pro:" + email);
+    } catch (e) { return fail(); }
+    // Best-effort welcome DM so the user sees it worked.
+    try { await sendDiscordDM(env, String(du.id), "🎮 Loot Radar connected! You'll get fast loot alerts here, usually within 20 minutes of a drop."); } catch (e) {}
+    return Response.redirect("https://radar.codemeoww.com/pro?discord=ok", 302);
+  }
+  if (path === "/api/discord/unlink" && request.method === "POST") {
+    const email = await sessionEmail(request, env);
+    if (!email) return new Response(JSON.stringify({ ok: false, error: "login required" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    if (env && env.DB) {
+      try {
+        const row = await env.DB.prepare("SELECT discord_user_id FROM customers WHERE email = ?").bind(email).first();
+        if (row && row.discord_user_id) { try { await env.KV.delete("discord:dm:" + row.discord_user_id); } catch (e) {} }
+        await env.DB.prepare("UPDATE customers SET discord_user_id = NULL, updated_at = ? WHERE email = ?").bind(new Date().toISOString(), email).run();
+        memDel("pro:" + email);
+      } catch (e) {}
     }
     return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
   }
