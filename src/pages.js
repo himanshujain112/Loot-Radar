@@ -5,6 +5,7 @@ import { esc, endsMs, endsLabel, isJustDropped } from "./util.js";
 import { STORE_PICK_ORDER, STORE_NAMES } from "./config.js";
 import { proStatus, getWishlist } from "./auth.js";
 import { normPrefs } from "./alerts.js";
+import { DISCORD_SERVER_ALERTS } from "./discord.js";
 
 // Ticking countdowns for every [data-ends] badge + "next sweep" hero line.
 export const COUNTDOWN_JS = "<script>(function(){function fmt(ms){if(ms<=0)return'expired';var d=Math.floor(ms/864e5),h=Math.floor(ms%864e5/36e5),m=Math.floor(ms%36e5/6e4);return(d>0?d+'d ':'')+((h>0||d>0)?h+'h ':'')+m+'m left';}function tick(){var now=Date.now();var bs=document.querySelectorAll('[data-ends]');for(var i=0;i<bs.length;i++){bs[i].textContent=fmt(Date.parse(bs[i].getAttribute('data-ends'))-now);}var s=document.querySelector('[data-sweep]');if(s){var n=new Date();var nx=new Date(n);nx.setSeconds(0,0);nx.setMinutes(Math.ceil(n.getMinutes()/20)*20);if(nx<=n)nx.setMinutes(nx.getMinutes()+20);var mm=Math.max(1,Math.round((nx-n)/6e4));s.textContent='next sweep in ~'+mm+' min';}}tick();setInterval(tick,30000);})();</script>";
@@ -795,7 +796,7 @@ export async function proHTML(env, email, tgUrl) {
           "catch(e){m.textContent='⚠ Could not disconnect';}}</script>"
         : '<p class="sec-sub" style="text-align:center">Or get alerts in your Discord DMs:</p>' +
           '<a class="btn" href="/api/discord/connect">Connect Discord</a>') +
-      (st.discord && st.discord.channel
+      (DISCORD_SERVER_ALERTS ? (st.discord && st.discord.channel
         ? '<p style="margin-top:14px"><span class="badge free">Server alerts on</span></p>' +
           '<p class="sec-sub" style="text-align:center">Posting to <b>#' + esc(st.discord.channel.channel) + '</b> in ' + esc(st.discord.channel.guild) + '.</p>' +
           '<button class="btn small ghost" onclick="dcServerUnlink()">Remove server alerts</button> <span id="dcs_msg" class="sec-sub"></span>'
@@ -803,10 +804,10 @@ export async function proHTML(env, email, tgUrl) {
           '<button class="btn" onclick="dcInvite()">Add bot to your server</button>' +
           '<p class="sec-sub" style="text-align:center">Added it? <a href="#" onclick="dcLoadGuilds(event)">load your servers</a> and pick a channel:</p>' +
           '<div id="dcs_pick" style="display:none;margin-top:8px">' +
-          '<select id="dcs_guild" onchange="dcLoadChannels()"><option value="">pick a server…</option></select> ' +
-          '<select id="dcs_channel" style="display:none"><option value="">pick a channel…</option></select> ' +
+          '<select id="dcs_guild" class="field" style="min-width:0" onchange="dcLoadChannels()"><option value="">pick a server…</option></select> ' +
+          '<select id="dcs_channel" class="field" style="min-width:0;display:none"><option value="">pick a channel…</option></select> ' +
           '<button class="btn small" id="dcs_save" style="display:none" onclick="dcSaveServer()">Save</button></div>' +
-          '<div><span id="dcs_msg" class="sec-sub"></span></div>') +
+          '<div><span id="dcs_msg" class="sec-sub"></span></div>') : "") +
       "<script>" +
       "async function dcInvite(){try{var r=await fetch('/api/discord/invite-url');var j=await r.json();if(j.url)window.open(j.url,'_blank');}catch(e){}}" +
       "async function dcLoadGuilds(ev){if(ev)ev.preventDefault();var m=document.getElementById('dcs_msg');m.textContent='loading…';" +

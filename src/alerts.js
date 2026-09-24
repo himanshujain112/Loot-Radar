@@ -11,7 +11,7 @@ import { cleanTitle, esc } from "./util.js";
 import { memGet, memPut } from "./cache.js";
 import { storeUrl } from "./feeds.js";
 import { sendTelegram, sendEmail } from "./notify.js";
-import { sendDiscordDM, sendDiscordChannel, alertDigestDiscord } from "./discord.js";
+import { sendDiscordDM, sendDiscordChannel, alertDigestDiscord, DISCORD_SERVER_ALERTS } from "./discord.js";
 import { dailyDigestEmail } from "./emails.js";
 
 // Store names for alert payloads, with hardcoded fallbacks for the three alert stores.
@@ -413,7 +413,7 @@ export async function pollAndAlert(env) {
       }
     }
     const dcChannel = u.discord_channel_id ? String(u.discord_channel_id) : null;
-    if (dcChannel && env.DISCORD_BOT_TOKEN) {
+    if (DISCORD_SERVER_ALERTS && dcChannel && env.DISCORD_BOT_TOKEN) {
       const chKey = "dcch:" + dcChannel;
       const freshCh = [];
       for (const it of items) {

@@ -1,3 +1,7 @@
+// Feature flag: server (guild) channel alerts. Off for now; only DMs.
+// When re-enabled, the dashboard server-picker section renders again.
+export const DISCORD_SERVER_ALERTS = false;
+
 // Discord alerts: OAuth2 connect flow + bot DMs through the REST API.
 // No gateway connection needed; the bot never has to stay online.
 // Users link from the Pro dashboard; the worker DMs them like Telegram.
