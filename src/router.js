@@ -18,6 +18,7 @@ import {
   pageHTML, homeHTML, dealsPageHTML, freebiesPageHTML, pricingPageHTML,
   aboutPageHTML, termsPageHTML, privacyPageHTML, refundsPageHTML,
   apiDocsPageHTML, faqPageHTML, loginHTML, thanksHTML, thanksActiveHTML, thanksPendingHTML, proHTML, jsonLD,
+  dealRow, freebieCard, splitFreebies,
 } from "./pages.js";
 
 // Session check for server-rendered nav. Session reads are memory-cached per
@@ -88,8 +89,32 @@ export async function handleFetch(request, env, ctx) {
       });
     }
   }
-  if (path === "/api/apikey/create" && request.method === "POST") {
-    const email = await sessionEmail(request, env);
+  // Public "load more" paging for the site lists. Same ranked data as the
+  // pages, no key needed (this data is free on the site anyway).
+  if ((path === "/api/more/deals" || path === "/api/more/freebies") && request.method === "GET") {
+    const offset = Math.max(0, parseInt(url.searchParams.get("offset") || "0", 10) || 0);
+    const limit = Math.min(20, Math.max(1, parseInt(url.searchParams.get("limit") || "10", 10) || 10));
+    let html = "", hasMore = false;
+    try {
+      if (path === "/api/more/deals") {
+        const deals = await getDeals(ctx);
+        const slice = deals.slice(offset, offset + limit);
+        await attachGameLows(env, slice);
+        html = slice.map(dealRow).join("");
+        hasMore = offset + limit < deals.length;
+      } else {
+        const freebies = await getFreebies(ctx);
+        const list = url.searchParams.get("view") === "home" ? splitFreebies(freebies).rest : freebies;
+        const slice = list.slice(offset, offset + limit);
+        html = slice.map(freebieCard).join("");
+        hasMore = offset + limit < list.length;
+      }
+    } catch (e) { /* fall through with empty html */ }
+    return new Response(JSON.stringify({ html, hasMore }), {
+      headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=300" },
+    });
+  }
+  if (path === "/api/apikey/create" && request.method === "POST") {    const email = await sessionEmail(request, env);
     const st = await proStatus(env, email);
     if (!email || !st.pro) {
       return new Response(JSON.stringify({ error: "Pro required" }), { status: 403, headers: { "Content-Type": "application/json" } });

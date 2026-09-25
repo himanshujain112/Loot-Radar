@@ -202,7 +202,7 @@ export async function getFreebies(ctx) {
   try {
     const res = await fetchCached(ctx, FREEBIES_URL, { "User-Agent": UA, "Accept": "application/json" });
     const data = await res.json();
-    return (Array.isArray(data) ? data : []).slice(0, 12).map(g => ({
+    return (Array.isArray(data) ? data : []).slice(0, 40).map(g => ({
       title: cleanTitle(g.title),
       worth: g.worth || "Free",
       thumb: g.thumbnail || g.image || "",
@@ -216,11 +216,26 @@ export async function getFreebies(ctx) {
 }
 
 export async function getDeals(ctx) {
+  // Two upstream pages (120 deals) filtered to 70%+ off, ranked by
+  // discount x review count, top 100 kept for paging.
   try {
-    const res = await fetchCached(ctx, DEALS_URL, { "User-Agent": UA, "Accept": "application/json" });
-    const data = await res.json();
-    const deals = (Array.isArray(data) ? data : []).map(d => normDeal(d));
+    const pages = await Promise.all([0, 1].map(pn =>
+      fetchCached(ctx, DEALS_URL + "&pageNumber=" + pn, { "User-Agent": UA, "Accept": "application/json" })
+        .then(r => r.json()).catch(() => [])
+    ));
+    const seen = new Set();
+    const deals = [];
+    for (const page of pages) {
+      for (const d of (Array.isArray(page) ? page : [])) {
+        const n = normDeal(d);
+        if (n.off < 70) continue;
+        const key = n.title + "|" + n.price;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deals.push(n);
+      }
+    }
     deals.sort((a, b) => dealScore(b) - dealScore(a));
-    return deals.slice(0, 30);
+    return deals.slice(0, 100);
   } catch (e) { return []; }
 }

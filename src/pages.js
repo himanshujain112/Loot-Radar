@@ -8,7 +8,33 @@ import { normPrefs } from "./alerts.js";
 import { DISCORD_SERVER_ALERTS } from "./discord.js";
 
 // Ticking countdowns for every [data-ends] badge + "next sweep" hero line.
-export const COUNTDOWN_JS = "<script>(function(){function fmt(ms){if(ms<=0)return'expired';var d=Math.floor(ms/864e5),h=Math.floor(ms%864e5/36e5),m=Math.floor(ms%36e5/6e4);return(d>0?d+'d ':'')+((h>0||d>0)?h+'h ':'')+m+'m left';}function tick(){var now=Date.now();var bs=document.querySelectorAll('[data-ends]');for(var i=0;i<bs.length;i++){bs[i].textContent=fmt(Date.parse(bs[i].getAttribute('data-ends'))-now);}var s=document.querySelector('[data-sweep]');if(s){var n=new Date();var nx=new Date(n);nx.setSeconds(0,0);nx.setMinutes(Math.ceil(n.getMinutes()/20)*20);if(nx<=n)nx.setMinutes(nx.getMinutes()+20);var mm=Math.max(1,Math.round((nx-n)/6e4));s.textContent='next sweep in ~'+mm+' min';}}tick();setInterval(tick,30000);})();</script>";
+export const COUNTDOWN_JS = "<script>(function(){function fmt(ms){if(ms<=0)return'expired';var d=Math.floor(ms/864e5),h=Math.floor(ms%864e5/36e5),m=Math.floor(ms%36e5/6e4);return(d>0?d+'d ':'')+((h>0||d>0)?h+'h ':'')+m+'m left';}function tick(){var now=Date.now();var bs=document.querySelectorAll('[data-ends]');for(var i=0;i<bs.length;i++){bs[i].textContent=fmt(Date.parse(bs[i].getAttribute('data-ends'))-now);}var s=document.querySelector('[data-sweep]');if(s){var n=new Date();var nx=new Date(n);nx.setSeconds(0,0);nx.setMinutes(Math.ceil(n.getMinutes()/20)*20);if(nx<=n)nx.setMinutes(nx.getMinutes()+20);var mm=Math.max(1,Math.round((nx-n)/6e4));s.textContent='next sweep in ~'+mm+' min';}}tick();setInterval(tick,30000);})();</scr" + "ipt>";
+
+export const LOADMORE_JS = "<script>" +
+"function loadMore(b){b.disabled=true;var t=b.textContent;b.textContent='Loading...';" +
+"var q='offset='+b.getAttribute('data-offset')+'&limit='+b.getAttribute('data-limit');" +
+"var v=b.getAttribute('data-view');if(v)q+='&view='+v;" +
+"fetch('/api/more/'+b.getAttribute('data-type')+'?'+q).then(function(r){return r.json();}).then(function(d){" +
+"if(d.html){document.getElementById(b.getAttribute('data-target')).insertAdjacentHTML('beforeend',d.html);" +
+"b.setAttribute('data-offset',parseInt(b.getAttribute('data-offset'),10)+parseInt(b.getAttribute('data-limit'),10));}" +
+"if(!d.hasMore){b.remove();}else{b.disabled=false;b.textContent=t;}" +
+"}).catch(function(){b.disabled=false;b.textContent=t;});}" +
+"</scr" + "ipt>";
+
+export function loadMoreBtn(type, target, offset, limit, view) {
+  return '<div style="text-align:center;margin-top:20px">' +
+    '<button class="btn ghost" data-type="' + type + '" data-target="' + target + '" data-offset="' + offset + '" data-limit="' + limit + '"' +
+    (view ? ' data-view="' + view + '"' : '') + ' onclick="loadMore(this)">Load more</button></div>';
+}
+
+// Freebies expiring within 48h get the "Last call" strip; everything else
+// goes in the main grid. Shared by homeHTML and the /api/more/freebies endpoint.
+export function splitFreebies(freebies) {
+  const nowMs = Date.now();
+  const urgent = freebies.filter(f => { const t = endsMs(f); return t && t > nowMs && t - nowMs <= 48 * 36e5; });
+  const rest = freebies.filter(f => urgent.indexOf(f) < 0);
+  return { urgent, rest };
+}
 
 export function freebieCard(g) {
   const ms = endsMs(g);
@@ -355,11 +381,9 @@ function promoBar() {
 }
 
 export function homeHTML(freebies, deals, loggedIn) {  const topDeals = deals.slice(0, 8);
-  const nowMs = Date.now();
   // FOMO split: anything expiring within 48h gets a "Last call" strip on top,
   // sorted soonest-first (getFreebies already sorts by expiry).
-  const urgent = freebies.filter(f => { const t = endsMs(f); return t && t > nowMs && t - nowMs <= 48 * 36e5; });
-  const rest = freebies.filter(f => urgent.indexOf(f) < 0);
+  const { urgent, rest } = splitFreebies(freebies);
   const topFree = rest.slice(0, 8);
   const urgLine = urgent.length
     ? '<p class="hero-urgency">⚡ <b>' + urgent.length + '</b> free game' + (urgent.length > 1 ? "s vanish" : " vanishes") + ' in the next 48 hours · <span data-sweep>next sweep soon</span></p>'
@@ -375,18 +399,20 @@ export function homeHTML(freebies, deals, loggedIn) {  const topDeals = deals.sl
   "</header>" +
 
   '<div class="sec-head"><h2>Top discounts</h2><a class="more" href="/deals">Browse all deals →</a></div>' +
-  '<div class="dealrows">' +
+  '<div class="dealrows" id="home_deals">' +
     (topDeals.length ? topDeals.map(dealRow).join("") : '<p class="empty">Deal feed is quiet at the moment.</p>') +
   "</div>" +
+  (deals.length > 8 ? loadMoreBtn("deals", "home_deals", 8, 8) : "") +
 
   (urgent.length ?
     '<div class="sec-head urgent"><h2>Last call</h2><span class="more">gone within 48 hours</span></div>' +
     '<div class="grid">' + urgent.map(freebieCard).join("") + "</div>" : "") +
 
   '<div class="sec-head"><h2>Free to claim</h2><a class="more" href="/freebies">Browse all freebies →</a></div>' +
-  '<div class="grid">' +
+  '<div class="grid" id="home_freebies">' +
     (topFree.length ? topFree.map(freebieCard).join("") : '<p class="empty">No freebies right now. Check back soon.</p>') +
   "</div>" +
+  (rest.length > 8 ? loadMoreBtn("freebies", "home_freebies", 8, 8, "home") : "") +
 
   '<div class="sec-head"><h2>Simple pricing</h2><a class="more" href="/pricing">Compare plans →</a></div>' +
   '<p class="sec-sub">Browsing is free forever. Pro adds alerts.</p>' +
@@ -402,31 +428,36 @@ export function homeHTML(freebies, deals, loggedIn) {  const topDeals = deals.sl
 
   '<div class="sec-head"><h2>Questions, answered</h2><a class="more" href="/faq">Full FAQ →</a></div>' +
   homeFaqHTML() +
-  "</div>" + COUNTDOWN_JS + footHTML();
+  "</div>" + COUNTDOWN_JS + LOADMORE_JS + footHTML();
 }
 
 export function dealsPageHTML(deals, loggedIn) {
+  const first = deals.slice(0, 30);
   return navHTML("/deals", loggedIn) +
   '<div class="wrap"><div class="pagehead">' +
     '<div class="overline">Price drops</div><h1>Steam deals</h1>' +
-    "<p>" + deals.length + " deals tracked, ranked by discount and player reviews. Prices refresh every 20 minutes.</p>" +
+    "<p>" + deals.length + " deals tracked, 70%+ off, ranked by discount and player reviews. Prices refresh every 20 minutes.</p>" +
   "</div>" +
-  '<div class="dealrows" style="margin-top:20px">' +
-    (deals.length ? deals.map(dealRow).join("") : '<p class="empty">Deal feed is quiet at the moment.</p>') +
-  "</div></div>" + footHTML();
+  '<div class="dealrows" id="all_deals" style="margin-top:20px">' +
+    (first.length ? first.map(dealRow).join("") : '<p class="empty">Deal feed is quiet at the moment.</p>') +
+  "</div>" +
+  (deals.length > 30 ? loadMoreBtn("deals", "all_deals", 30, 10) : "") +
+  "</div>" + LOADMORE_JS + footHTML();
 }
 
 export function freebiesPageHTML(freebies, loggedIn) {
+  const first = freebies.slice(0, 20);
   return navHTML("/freebies", loggedIn) +
   '<div class="wrap"><div class="pagehead">' +
     '<div class="overline">On the radar</div><h1>Free to claim</h1>' +
     "<p>Every free PC game live right now, but not for long. Claim buttons go straight to the source, no catch.</p>" +
   "</div>" +
   '<div class="sec-head"><h2>' + freebies.length + ' live now</h2><a class="more" href="/api/docs">API docs →</a></div>' +
-  '<div class="grid">' +
-    (freebies.length ? freebies.map(freebieCard).join("") : '<p class="empty">No freebies right now. Check back soon.</p>') +
+  '<div class="grid" id="all_freebies">' +
+    (first.length ? first.map(freebieCard).join("") : '<p class="empty">No freebies right now. Check back soon.</p>') +
   "</div>" +
-  '<p class="srcattr">Freebies data by <a href="https://www.gamerpower.com" target="_blank" rel="noopener">GamerPower</a></p></div>' + COUNTDOWN_JS + footHTML();
+  (freebies.length > 20 ? loadMoreBtn("freebies", "all_freebies", 20, 10) : "") +
+  '<p class="srcattr">Freebies data by <a href="https://www.gamerpower.com" target="_blank" rel="noopener">GamerPower</a></p></div>' + COUNTDOWN_JS + LOADMORE_JS + footHTML();
 }
 
 export function pricingPageHTML(loggedIn) {
