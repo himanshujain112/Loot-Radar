@@ -409,7 +409,7 @@ export function dealsPageHTML(deals, loggedIn) {
   return navHTML("/deals", loggedIn) +
   '<div class="wrap"><div class="pagehead">' +
     '<div class="overline">Price drops</div><h1>Steam deals</h1>' +
-    "<p>" + deals.length + " deals tracked, sorted by biggest discount first. Prices refresh every 20 minutes.</p>" +
+    "<p>" + deals.length + " deals tracked, ranked by discount and player reviews. Prices refresh every 20 minutes.</p>" +
   "</div>" +
   '<div class="dealrows" style="margin-top:20px">' +
     (deals.length ? deals.map(dealRow).join("") : '<p class="empty">Deal feed is quiet at the moment.</p>') +

@@ -45,7 +45,17 @@ export function normDeal(d, steamAppID, storeName) {
     url: storeUrl(d, steamAppID),
     steamAppID: steamAppID || d.steamAppID || null,
     gameID: d.gameID || null,
+    ratingCount: parseInt(d.steamRatingCount || "0", 10) || 0,
+    ratingPercent: parseInt(d.steamRatingPercent || "0", 10) || 0,
   };
+}
+
+// Quality ranking: discount % weighted by review count, so recognizable,
+// well-reviewed games float above -95% shovelware nobody has heard of.
+// score = off * log10(1 + reviews). Missing review data scores 0 and
+// sinks, so an upstream format change degrades to upstream order.
+export function dealScore(d) {
+  return (d.off || 0) * Math.log10(1 + (d.ratingCount || 0));
 }
 
 // ---------- Pro API: full deal-feed surface routed through the worker ----------
@@ -209,6 +219,8 @@ export async function getDeals(ctx) {
   try {
     const res = await fetchCached(ctx, DEALS_URL, { "User-Agent": UA, "Accept": "application/json" });
     const data = await res.json();
-    return (Array.isArray(data) ? data : []).map(d => normDeal(d));
+    const deals = (Array.isArray(data) ? data : []).map(d => normDeal(d));
+    deals.sort((a, b) => dealScore(b) - dealScore(a));
+    return deals.slice(0, 30);
   } catch (e) { return []; }
 }

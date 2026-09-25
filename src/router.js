@@ -571,7 +571,7 @@ export async function handleFetch(request, env, ctx) {
       const deals = await getDeals(ctx);
       await attachGameLows(env, deals);
       const li = await pageLoggedIn(request, env);
-      return finalize(pageHTML("Steam deals: Loot Radar", "Every Steam deal tracked by Loot Radar, sorted by biggest discount first.", "/deals") +
+      return finalize(pageHTML("Steam deals: Loot Radar", "Every Steam deal tracked by Loot Radar, ranked by discount and player reviews.", "/deals") +
         dealsPageHTML(deals, li) + "</body></html>");
     }
   }
