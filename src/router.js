@@ -279,8 +279,9 @@ export async function handleFetch(request, env, ctx) {
     });
   }
   if (path === "/sitemap.xml") {
-    const urls = ["", "deals", "freebies", "pricing", "faq", "about", "terms", "privacy", "refunds", "login", "api/docs"].map(p =>
-      "<url><loc>https://radar.codemeoww.com/" + p + "</loc><lastmod>2026-09-24</lastmod></url>").join("");
+    const lm = new Date().toISOString().slice(0, 10);
+    const urls = ["", "deals", "freebies", "pricing", "faq", "about", "terms", "privacy", "refunds", "api/docs"].map(p =>
+      "<url><loc>https://radar.codemeoww.com/" + p + "</loc><lastmod>" + lm + "</lastmod></url>").join("");
     return new Response('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + urls + "</urlset>", {
       headers: { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, max-age=86400" },
     });
@@ -317,7 +318,7 @@ export async function handleFetch(request, env, ctx) {
     const token = url.searchParams.get("token") || "";
     const rec = (env && env.KV) ? await env.KV.get("magic:" + token, "json") : null;
     if (!rec || !rec.email) {
-      return finalize(pageHTML("Link expired: Loot Radar", "That login link is invalid or expired.", "/login") +
+      return finalize(pageHTML("Link expired: Loot Radar", "That login link is invalid or expired.", "/login", null, { noindex: true }) +
         '<div class="wrap" style="padding:80px 22px;text-align:center"><h1>Link expired</h1>' +
         '<p class="sec-sub" style="text-align:center">That login link is invalid or expired.</p>' +
         '<a class="btn" href="/login">Get a new link</a></div></body></html>', 400);

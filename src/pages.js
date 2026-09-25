@@ -61,7 +61,7 @@ export function freebieCard(g) {
 
 export function dealRow(d) {
   return '<a class="dealrow" href="' + esc(d.url) + '" target="_blank" rel="noopener">' +
-    (d.thumb ? '<img loading="lazy" src="' + esc(d.thumb) + '" alt="">' : "") +
+    (d.thumb ? '<img loading="lazy" src="' + esc(d.thumb) + '" alt="' + esc(d.title) + '">' : "") +
     '<span class="t"><h3>' + esc(d.title) + '</h3><span class="store">Steam' + (d.atLow ? ' · <b class="lowtag">all-time low</b>' : "") + '</span></span>' +
     '<span class="pct">-' + d.off + '%</span>' +
     '<span class="prices"><span class="old">$' + esc(d.was) + '</span><span class="new">$' + esc(d.price) + "</span></span>" +
@@ -392,7 +392,7 @@ export function homeHTML(freebies, deals, loggedIn) {  const topDeals = deals.sl
   promoBar() +
   '<div class="wrap"><header class="hero">' +
     "<h1>PC game deals and freebies in one place.</h1>" +
-    '<p class="sub">Track free PC games, deep discounts, and limited time deals across multiple stores including steam, epic games, GOG and more, all in one place, updated every 20 min!</p>' +
+    '<p class="sub">Track free PC games, deep discounts, and limited time deals across multiple stores including Steam, Epic Games, GOG and more, all in one place, updated every 20 min!</p>' +
     '<div class="hero-cta"><a class="btn" href="/freebies">See what\'s free</a>' +
     '<a class="btn ghost" href="/deals">Browse today\'s deals</a></div>' +
     urgLine +
@@ -465,7 +465,7 @@ export function pricingPageHTML(loggedIn) {
   promoBar() +
   '<div class="wrap"><div class="pagehead">' +
     '<div class="overline">Pricing</div><h1>Free forever. Pro for loot hunters.</h1>' +
-    '<p>Browse every freebie and deal free. Pro alerts you fast, before freebies expire.</p>' +
+    '<p>Browse every freebie and deal free. Pro alerts you fast, usually before freebies expire.</p>' +
   "</div>" +
   '<div class="plans">' +
     '<div class="plan"><h3>Scout</h3><div class="p">$0<small> / forever</small></div>' +
@@ -478,7 +478,7 @@ export function pricingPageHTML(loggedIn) {
     "<ul><li>Everything in Scout</li><li>Fast Telegram or Discord alerts</li><li>Daily email digest</li>" +
     "<li>Every freebie + every deal matching your alert settings</li><li>Wishlist price watch</li><li>All-time low price alerts</li><li>Pro API access for the deals & freebies feeds</li><li>Support indie radar development</li></ul>" +
     '<div class="plan-cta" style="display:flex;gap:10px;flex-wrap:wrap">' +
-    '<a class="btn" href="https://checkout.dodopayments.com/buy/pdt_0No6epRAEDlFPuD8vFMT3?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">Monthly: $4/mo</a>' +
+    '<a class="btn" href="https://checkout.dodopayments.com/buy/pdt_0No6epRAEDlFPuD8vFMT3?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">Monthly $4/mo</a>' +
     '<a class="btn ghost" href="https://checkout.dodopayments.com/buy/pdt_0No6f9EaIF1CMH6wKBTVl?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">Yearly: $39/yr</a></div>' +
     '<div class="promo-claim">use code <button class="promo-code" onclick="promoCopy(this)" title="copy code">LAUNCH50</button> at checkout to claim <b>50% off</b> · monthly <b>$2</b> · yearly <b>$19.50</b> · ends oct 21</div>' +
     "<script>" +
@@ -563,7 +563,7 @@ export function refundsPageHTML(loggedIn) {
   "<h2>No refunds</h2>" +
   "<p><strong>All Loot Radar Pro sales are final and non-refundable.</strong> We do not offer refunds, partial refunds or account credits for monthly or yearly subscriptions, including for unused time after you cancel, or if you forget to cancel before renewal.</p>" +
   "<h2>Why</h2>" +
-  "<p>Pro is delivered digitally: alerts start with the next scan (usually within 20 minutes of subscribing), and every alert costs us real money to send. We keep the price low ($4/month) instead of building refund overhead into it.</p>" +
+  "<p>Pro is delivered digitally: alerts start with the next scan (usually within 20 minutes of subscribing), and they can't be un-sent once delivered. We keep the price low ($4/month) instead of building refund overhead into it.</p>" +
   "<h2>Cancel anytime</h2>" +
   "<p>You can cancel in one click from the billing link in your DodoPayments receipt email. Pro stays active until the end of the paid period. You keep every alert you've paid for.</p>" +
   "<h2>Billing mistakes</h2>" +
@@ -635,7 +635,7 @@ export function faqData() {
     ["q7", "How often are deals and freebies updated?",
       "The radar scans its sources every 20 minutes, and the site updates with each scan. Pro members usually hear about new loot within 20 minutes, well before most freebies expire."],
     ["q8", "How do the alerts work?",
-      "Make a free account or grab Pro, open your <a href=\"/dashboard\">dashboard</a> and connect Telegram, Discord, or both. Free accounts get one loot summary a day. Telegram takes about ten seconds with <b>Connect Telegram</b>. For Discord you can get DMs with <b>Connect Discord</b>, or add the bot to your own server and pick a channel for alerts to land in. When new loot drops you get <b>one message</b> listing everything new (usually within 20 minutes), capped at 8 items per scan so you're never spammed. The same drop is never alerted twice to the same account. To switch Telegram accounts, hit <b>Disconnect / switch account</b> on the dashboard, or send /unlink in Telegram, then connect the new one."],
+      "Make a free account or grab Pro, open your <a href=\"/dashboard\">dashboard</a> and connect Telegram, Discord, or both. Free accounts get one loot summary a day. Telegram takes about ten seconds with <b>Connect Telegram</b>. For Discord you can get DMs with <b>Connect Discord</b>. When new loot drops you get <b>one message</b> listing everything new (usually within 20 minutes), capped at 8 items per scan so you're never spammed. We dedupe alerts so the same drop doesn't ping you twice. To switch Telegram accounts, hit <b>Disconnect / switch account</b> on the dashboard, or send /unlink in Telegram, then connect the new one."],
     ["q8b", "What are all-time low alerts?",
       "Every deal row on the site is checked against the lowest price that game has ever sold for. Deals sitting at their all-time low get a badge on the site and a 🏆 tag in Pro alerts. If a game on your wishlist hits its all-time low, you get alerted even when the discount is under your usual minimum."],
     ["q13", "Can I choose what alerts I get?",
@@ -914,7 +914,8 @@ export async function proHTML(env, email, tgUrl) {
       '<p class="dash-sub">Logged in as <b>' + esc(email) + '</b>. You are on the free plan: one loot summary a day on Telegram and Discord. Upgrade for fast alerts, usually within 20 minutes of a drop.</p>' +
       '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
       '<a class="btn" href="https://checkout.dodopayments.com/buy/pdt_0No6epRAEDlFPuD8vFMT3?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">$4/mo</a>' +
-      '<a class="btn ghost" href="https://checkout.dodopayments.com/buy/pdt_0No6f9EaIF1CMH6wKBTVl?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">$39/yr</a></div></div>' +
+      '<a class="btn ghost" href="https://checkout.dodopayments.com/buy/pdt_0No6f9EaIF1CMH6wKBTVl?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">$39/yr</a></div>' +
+      '<p class="dash-sub" style="margin-top:12px">Launch deal · use code <b>LAUNCH50</b> at checkout for 50% off, ends oct 21.</p></div>' +
       connCard(st, tgUrl) +
       lockedCard(prefsCard(prefs)) + lockedCard(wishlistCard(wlItems)) + lockedCard(apiKeyCard(apiKeys));
   } else {
