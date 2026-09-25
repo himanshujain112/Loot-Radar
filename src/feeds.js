@@ -215,7 +215,15 @@ export async function getFreebies(ctx) {
   } catch (e) { return []; }
 }
 
-export async function getDeals(ctx) {
+// Stale fallback for the site deals pool: CheapShark intermittently fails for
+// worker egress (rate limits / challenges come in waves), which used to render
+// an empty deals page. Now the last good pool is kept in KV (24h) and served
+// when a fresh fetch comes back empty. Writes are throttled per isolate
+// (~10 min) to stay far under the KV write budget.
+const SITE_DEALS_KV = "loot:v2:site-deals";
+let lastSiteDealsSave = 0;
+
+async function freshDealsPool(ctx) {
   // Two upstream pages (120 deals) filtered to 70%+ off, ranked by
   // discount x review count, top 100 kept for paging.
   try {
@@ -238,4 +246,25 @@ export async function getDeals(ctx) {
     deals.sort((a, b) => dealScore(b) - dealScore(a));
     return deals.slice(0, 100);
   } catch (e) { return []; }
+}
+
+export async function getDeals(ctx, env) {
+  const pool = await freshDealsPool(ctx);
+  if (pool.length) {
+    try {
+      if (env && env.KV && Date.now() - lastSiteDealsSave > 600000) {
+        lastSiteDealsSave = Date.now();
+        const save = env.KV.put(SITE_DEALS_KV, JSON.stringify(pool), { expirationTtl: 86400 }).catch(() => {});
+        if (ctx && ctx.waitUntil) ctx.waitUntil(save); else await save;
+      }
+    } catch (e) {}
+    return pool;
+  }
+  try {
+    if (env && env.KV) {
+      const stale = await env.KV.get(SITE_DEALS_KV, "json");
+      if (Array.isArray(stale) && stale.length) return stale;
+    }
+  } catch (e) {}
+  return [];
 }

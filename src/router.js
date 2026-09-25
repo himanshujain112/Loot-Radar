@@ -97,7 +97,7 @@ export async function handleFetch(request, env, ctx) {
     let html = "", hasMore = false;
     try {
       if (path === "/api/more/deals") {
-        const deals = await getDeals(ctx);
+        const deals = await getDeals(ctx, env);
         const slice = deals.slice(offset, offset + limit);
         await attachGameLows(env, slice);
         html = slice.map(dealRow).join("");
@@ -586,7 +586,7 @@ export async function handleFetch(request, env, ctx) {
   }
   if (path === "/" || path === "/index.html") {
     {
-      const [freebies, deals] = await Promise.all([getFreebies(ctx), getDeals(ctx)]);
+      const [freebies, deals] = await Promise.all([getFreebies(ctx), getDeals(ctx, env)]);
       await attachGameLows(env, deals);
       const li = await pageLoggedIn(request, env);
       return finalize(pageHTML(null, null, "/", jsonLD(freebies)) + homeHTML(freebies, deals, li) + "</body></html>");
@@ -594,7 +594,7 @@ export async function handleFetch(request, env, ctx) {
   }
   if (path === "/deals") {
     {
-      const deals = await getDeals(ctx);
+      const deals = await getDeals(ctx, env);
       await attachGameLows(env, deals);
       const li = await pageLoggedIn(request, env);
       return finalize(pageHTML("Steam deals: Loot Radar", "Every Steam deal tracked by Loot Radar, ranked by discount and player reviews.", "/deals") +
