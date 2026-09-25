@@ -348,7 +348,7 @@ export function footHTML() {
 }
 
 function promoBar() {
-  const msg = 'launch deal · <b>50% off pro</b>, monthly and yearly · less than a coffee a month · ends oct 21 · use code <span class="promo-code">LAUNCH50</span> at checkout';
+  const msg = 'launch deal · <b>50% off pro</b>, monthly and yearly · cheaper than your last steam impulse buy · ends oct 21 · use code <span class="promo-code">LAUNCH50</span> at checkout';
   return '<div class="promo-ticker"><div class="promo-ticker-track">' +
     '<span>' + msg + ' ·&nbsp;&nbsp;</span><span>' + msg + ' ·&nbsp;&nbsp;</span>' +
     '</div></div>';
