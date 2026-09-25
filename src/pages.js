@@ -231,6 +231,19 @@ export function pageHTML(title, desc, path, headExtra, opts) {
     ".sec-head.urgent h2{color:#ff8a8a}" +
     ".hero-urgency{margin:4px 0 26px;color:var(--mut);font-size:.92rem}" +
     ".hero-urgency b{color:#ff8a8a}" +
+    ".promo-bar{background:rgba(34,255,136,.07);border-bottom:1px solid rgba(34,255,136,.28);color:var(--txt);text-align:center;font-size:.85rem;padding:9px 16px}" +
+    ".promo-bar b{color:var(--grn);font-weight:600}" +
+    ".promo-code{background:rgba(34,255,136,.12);border:1px dashed rgba(34,255,136,.55);color:var(--grn);font-family:ui-monospace,monospace;font-size:.82rem;font-weight:600;letter-spacing:.06em;padding:2px 9px;border-radius:6px;cursor:pointer}" +
+    ".promo-code:hover{background:rgba(34,255,136,.2)}" +
+    ".promo-ticker{background:#0b0d10;border-bottom:1px solid rgba(34,255,136,.28);overflow:hidden;white-space:nowrap;padding:8px 0}" +
+    ".promo-ticker-track{display:inline-block;animation:ticker 28s linear infinite;will-change:transform}" +
+    ".promo-ticker-track span{display:inline-block;padding:0 24px;color:var(--txt);font-size:.85rem}" +
+    ".promo-ticker-track b{color:var(--grn);font-weight:600}" +
+    ".promo-ticker:hover .promo-ticker-track{animation-play-state:paused}" +
+    "@keyframes ticker{from{transform:translateX(0)}to{transform:translateX(-50%)}}" +
+    "@media (prefers-reduced-motion:reduce){.promo-ticker-track{animation:none}}" +
+    ".promo-claim{margin-top:12px;border:1px dashed rgba(34,255,136,.5);border-radius:10px;padding:10px 14px;font-size:.88rem;color:var(--txt);background:rgba(34,255,136,.06)}" +
+    ".promo-claim b{color:var(--grn)}" +
     ".card-foot{margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:10px;padding-top:4px}" +
     ".plat{font-size:.78rem;color:var(--mut)}" +
     ".price s{color:var(--mut);font-size:.85rem;margin-right:6px}" +
@@ -334,8 +347,14 @@ export function footHTML() {
     "</footer>";
 }
 
-export function homeHTML(freebies, deals, loggedIn) {
-  const topDeals = deals.slice(0, 8);
+function promoBar() {
+  const msg = 'launch deal · <b>50% off pro</b>, monthly and yearly · less than a coffee a month · ends oct 21 · use code <span class="promo-code">LAUNCH50</span> at checkout';
+  return '<div class="promo-ticker"><div class="promo-ticker-track">' +
+    '<span>' + msg + ' ·&nbsp;&nbsp;</span><span>' + msg + ' ·&nbsp;&nbsp;</span>' +
+    '</div></div>';
+}
+
+export function homeHTML(freebies, deals, loggedIn) {  const topDeals = deals.slice(0, 8);
   const nowMs = Date.now();
   // FOMO split: anything expiring within 48h gets a "Last call" strip on top,
   // sorted soonest-first (getFreebies already sorts by expiry).
@@ -346,6 +365,7 @@ export function homeHTML(freebies, deals, loggedIn) {
     ? '<p class="hero-urgency">⚡ <b>' + urgent.length + '</b> free game' + (urgent.length > 1 ? "s vanish" : " vanishes") + ' in the next 48 hours · <span data-sweep>next sweep soon</span></p>'
     : '<p class="hero-urgency"><span data-sweep>next sweep soon</span> · new drops land every 20 minutes</p>';
   return navHTML("/", loggedIn) +
+  promoBar() +
   '<div class="wrap"><header class="hero">' +
     "<h1>PC game deals and freebies in one place.</h1>" +
     '<p class="sub">Track free PC games, deep discounts, and limited time deals across multiple stores including steam, epic games, GOG and more, all in one place, updated every 20 min!</p>' +
@@ -411,6 +431,7 @@ export function freebiesPageHTML(freebies, loggedIn) {
 
 export function pricingPageHTML(loggedIn) {
   return navHTML("/pricing", loggedIn) +
+  promoBar() +
   '<div class="wrap"><div class="pagehead">' +
     '<div class="overline">Pricing</div><h1>Free forever. Pro for loot hunters.</h1>' +
     '<p>Browse every freebie and deal free. Pro alerts you fast, before freebies expire.</p>' +
@@ -428,6 +449,11 @@ export function pricingPageHTML(loggedIn) {
     '<div class="plan-cta" style="display:flex;gap:10px;flex-wrap:wrap">' +
     '<a class="btn" href="https://checkout.dodopayments.com/buy/pdt_0No6epRAEDlFPuD8vFMT3?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">Monthly: $4/mo</a>' +
     '<a class="btn ghost" href="https://checkout.dodopayments.com/buy/pdt_0No6f9EaIF1CMH6wKBTVl?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">Yearly: $39/yr</a></div>' +
+    '<div class="promo-claim">use code <button class="promo-code" onclick="promoCopy(this)" title="copy code">LAUNCH50</button> at checkout to claim <b>50% off</b> · monthly <b>$2</b> · yearly <b>$19.50</b> · ends oct 21</div>' +
+    "<script>" +
+    "function promoCopy(b){var done=function(){b.textContent='copied';setTimeout(function(){b.textContent='LAUNCH50';},1500);};" +
+    "if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText('LAUNCH50').then(done,done);}else{done();}}" +
+    "</script>" +
     '<div class="fine">Secure checkout via DodoPayments · cancel anytime</div></div>' +
   "</div></div>" + footHTML();
 }
