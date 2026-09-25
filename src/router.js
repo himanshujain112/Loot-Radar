@@ -64,7 +64,7 @@ export async function handleFetch(request, env, ctx) {
     try {
       let body;
       if (path === "/api/freebies") {
-        const items = await getFreebies(ctx);
+        const items = await getFreebies(ctx, env);
         body = { count: items.length, updated: new Date().toISOString(), items };
       } else if (path === "/api/deals") {
         body = await apiDeals(url, ctx);
@@ -103,7 +103,7 @@ export async function handleFetch(request, env, ctx) {
         html = slice.map(dealRow).join("");
         hasMore = offset + limit < deals.length;
       } else {
-        const freebies = await getFreebies(ctx);
+        const freebies = await getFreebies(ctx, env);
         const list = url.searchParams.get("view") === "home" ? splitFreebies(freebies).rest : freebies;
         const slice = list.slice(offset, offset + limit);
         html = slice.map(freebieCard).join("");
@@ -586,7 +586,7 @@ export async function handleFetch(request, env, ctx) {
   }
   if (path === "/" || path === "/index.html") {
     {
-      const [freebies, deals] = await Promise.all([getFreebies(ctx), getDeals(ctx, env)]);
+      const [freebies, deals] = await Promise.all([getFreebies(ctx, env), getDeals(ctx, env)]);
       await attachGameLows(env, deals);
       const li = await pageLoggedIn(request, env);
       return finalize(pageHTML(null, null, "/", jsonLD(freebies)) + homeHTML(freebies, deals, li) + "</body></html>");
@@ -603,7 +603,7 @@ export async function handleFetch(request, env, ctx) {
   }
   if (path === "/freebies") {
     {
-      const freebies = await getFreebies(ctx);
+      const freebies = await getFreebies(ctx, env);
       const li = await pageLoggedIn(request, env);
       return finalize(pageHTML("Free PC games: Loot Radar", "Every free-to-claim PC game live right now, tracked by Loot Radar.", "/freebies") +
         freebiesPageHTML(freebies, li) + "</body></html>");

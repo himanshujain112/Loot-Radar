@@ -198,11 +198,12 @@ export async function apiStores(url, ctx) {
   return { count: items.length, items };
 }
 
-export async function getFreebies(ctx) {
+export async function getFreebies(ctx, env) {
+  let items = [];
   try {
     const res = await fetchCached(ctx, FREEBIES_URL, { "User-Agent": UA, "Accept": "application/json" });
     const data = await res.json();
-    return (Array.isArray(data) ? data : []).slice(0, 40).map(g => ({
+    items = (Array.isArray(data) ? data : []).slice(0, 40).map(g => ({
       title: cleanTitle(g.title),
       worth: g.worth || "Free",
       thumb: g.thumbnail || g.image || "",
@@ -212,7 +213,24 @@ export async function getFreebies(ctx) {
       ends: g.end_date && g.end_date !== "N/A" ? g.end_date : null,
       published: g.date_published && g.date_published !== "N/A" ? g.date_published : null,
     })).sort((a, b) => (endsMs(a) || Infinity) - (endsMs(b) || Infinity)); // soonest-expiring first
-  } catch (e) { return []; }
+  } catch (e) { items = []; }
+  if (items.length) {
+    try {
+      if (env && env.KV && Date.now() - lastSiteFreebiesSave > 600000) {
+        lastSiteFreebiesSave = Date.now();
+        const save = env.KV.put(SITE_FREEBIES_KV, JSON.stringify(items), { expirationTtl: 86400 }).catch(() => {});
+        if (ctx && ctx.waitUntil) ctx.waitUntil(save); else await save;
+      }
+    } catch (e) {}
+    return items;
+  }
+  try {
+    if (env && env.KV) {
+      const stale = await env.KV.get(SITE_FREEBIES_KV, "json");
+      if (Array.isArray(stale) && stale.length) return stale;
+    }
+  } catch (e) {}
+  return [];
 }
 
 // Stale fallback for the site deals pool: CheapShark intermittently fails for
@@ -220,6 +238,12 @@ export async function getFreebies(ctx) {
 // an empty deals page. Now the last good pool is kept in KV (24h) and served
 // when a fresh fetch comes back empty. Writes are throttled per isolate
 // (~10 min) to stay far under the KV write budget.
+// Same stale-fallback pattern as the deals pool: serve last good freebies
+// from KV (24h) when GamerPower fails, so the homepage and /freebies never
+// render empty on an upstream blip.
+const SITE_FREEBIES_KV = "loot:v2:site-freebies";
+let lastSiteFreebiesSave = 0;
+
 const SITE_DEALS_KV = "loot:v2:site-deals";
 let lastSiteDealsSave = 0;
 
