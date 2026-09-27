@@ -599,8 +599,14 @@ export async function sendDailyDigest(env) {
         if (h) hits.push(h);
       }
       const n = freebies.length + deals.length + hits.length;
-      await sendEmail(env, email, "Today's loot: " + n + " finds on your radar", dailyDigestEmail(freebies, deals, hits));
-      await env.KV.put("dailydigest:" + today + ":" + email, "1", { expirationTtl: 172800 });
+      const sent = await sendEmail(env, email, "Today's loot: " + n + " finds on your radar", dailyDigestEmail(freebies, deals, hits));
+      if (sent && sent.ok) {
+        await env.KV.put("dailydigest:" + today + ":" + email, "1", { expirationTtl: 172800 });
+      } else {
+        // Don't mark as sent: a failed send leaves no key, so a later
+        // run can still attempt delivery instead of silently skipping.
+        console.log("daily digest send failed for " + email + ": " + ((sent && (sent.error || sent.status)) || "unknown"));
+      }
     } catch (e) {}
   }
 }
