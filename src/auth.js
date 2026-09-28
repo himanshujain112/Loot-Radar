@@ -49,6 +49,9 @@ export function apiKeyFrom(request, url) {
 const rlMap = new Map();
 export function rateOk(id, limit, windowSec) {
   const now = Date.now();
+  // Lazy prune: the map is keyed by IP for magic-link requests, so a bot
+  // hammering the endpoint could otherwise grow it without bound.
+  if (rlMap.size > 5000) for (const [k, v] of rlMap) if (now > v.exp) rlMap.delete(k);
   const e = rlMap.get(id);
   if (!e || now > e.exp) { rlMap.set(id, { n: 1, exp: now + windowSec * 1000 }); return true; }
   e.n++;
