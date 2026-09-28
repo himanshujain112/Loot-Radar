@@ -290,17 +290,11 @@ export async function handleFetch(request, env, ctx) {
     let email = "";
     try { email = (await request.json()).email || ""; } catch (e) {}
     email = String(email).trim().toLowerCase();
-    // Per-IP throttle: max 10 magic-link requests/hour. Without this, one IP
-    // could request links for endless addresses and burn the email budget.
-    if (env && env.KV) {
-      const ip = request.headers.get("CF-Connecting-IP") || "unknown";
-      try {
-        const k = "ratelimit:magic:" + ip;
-        const n = (parseInt(await env.KV.get(k) || "0", 10) || 0) + 1;
-        if (n > 10) return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
-        await env.KV.put(k, String(n), { expirationTtl: 3600 });
-      } catch (e) {}
-    }
+    // Per-IP throttle: max 10 magic-link requests/hour. In-memory per isolate
+    // (zero KV ops) so a bot hammering this endpoint can't burn the KV write
+    // budget. The per-address 15-minute KV throttle below still caps email spend.
+    const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+    if (!rateOk("magic:ip:" + ip, 10, 3600)) return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
     if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && env && env.KV) {
       // One magic-link email per 15 minutes per address, a valid link is already in their inbox.
       const recent = await env.KV.get("magicemail:" + email);
