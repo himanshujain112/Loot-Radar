@@ -7,6 +7,13 @@ export const CS_BASE = "https://www.cheapshark.com/api/1.0";
 export const UA = "LootRadar/1.0 (https://radar.codemeoww.com; contact lootradar@codemeoww.com)";
 export const CACHE_TTL = 900; // 15 minutes
 
+// Upstream reads (CheapShark, GamerPower) must never hang a worker: no default
+// fetch timeout exists in Workers, and a tarpitting upstream would stall the
+// alert cron until the wall-clock limit, silently skipping alert scans. 15s is
+// generous for these small JSON APIs; a timeout behaves exactly like an
+// upstream failure, which every call site already handles.
+export const UPSTREAM_TIMEOUT_MS = 15000;
+
 export const LOGO_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><path d="M56 64 L56 180 Q56 202 78 202 L178 202 Q200 202 200 180 L200 64 L128 112 Z" fill="#22ff88"/><circle cx="102" cy="152" r="20" fill="#ffffff"/><circle cx="154" cy="152" r="20" fill="#ffffff"/><circle cx="89" cy="152" r="9" fill="#0b0e14"/><circle cx="141" cy="152" r="9" fill="#0b0e14"/></svg>';
 
 // Alert-worthy stores only: the big-userbase ones. Smaller storefronts are noise.

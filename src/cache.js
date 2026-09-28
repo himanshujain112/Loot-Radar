@@ -6,7 +6,7 @@
 // status, API keys, wishlist, upstream JSON); KV backs loot data so crons and
 // web isolates share one upstream fetch; D1 writes are claim/insert-only.
 
-import { CACHE_TTL } from "./config.js";
+import { CACHE_TTL, UPSTREAM_TIMEOUT_MS } from "./config.js";
 
 const mem = new Map();
 export function memGet(k) {
@@ -58,7 +58,7 @@ export async function fetchCached(ctx, url, headers, ttlSec) {
   } else {
     let upstream;
     try {
-      upstream = await fetch(url, { headers });
+      upstream = await fetch(url, { headers, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
     } catch (e) {
       negCache(ctx, cache, req, mkey);
       throw new Error("upstream fetch failed");

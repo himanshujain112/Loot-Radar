@@ -5,7 +5,7 @@
 
 import {
   UA, FREEBIES_URL, ACTIVE_ALERT_STORES, DEFAULT_DEAL_STORES,
-  STORE_ALIASES, STORE_NAMES, STORE_PICK_ORDER,
+  STORE_ALIASES, STORE_NAMES, STORE_PICK_ORDER, UPSTREAM_TIMEOUT_MS,
 } from "./config.js";
 import { cleanTitle, esc } from "./util.js";
 import { memGet, memPut } from "./cache.js";
@@ -20,7 +20,7 @@ export async function alertStoreNames() {
   if (hit) return hit;
   const m = { "1": "Steam", "25": "Epic Games Store", "7": "GOG" };
   try {
-    const res = await fetch("https://www.cheapshark.com/api/1.0/stores", { headers: { "User-Agent": UA, "Accept": "application/json" } });
+    const res = await fetch("https://www.cheapshark.com/api/1.0/stores", { headers: { "User-Agent": UA, "Accept": "application/json" }, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
     if (res.ok) {
       const data = await res.json();
       for (const s of (Array.isArray(data) ? data : [])) m[s.storeID] = s.storeName;
@@ -54,7 +54,7 @@ export async function fetchLootItems(env, storeIDs) {
   }
   let freebies = [];
   try {
-    const res = await fetch(FREEBIES_URL, { headers: { "User-Agent": UA, "Accept": "application/json" } });
+    const res = await fetch(FREEBIES_URL, { headers: { "User-Agent": UA, "Accept": "application/json" }, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
     if (res.ok) {
       const data = await res.json();
       freebies = (Array.isArray(data) ? data : []).slice(0, 12).map(g => ({
@@ -78,7 +78,7 @@ export async function fetchLootItems(env, storeIDs) {
     const lists = await Promise.all(stores.map(async (storeID) => {
       try {
         const res = await fetch("https://www.cheapshark.com/api/1.0/deals?storeID=" + storeID + "&upperPrice=5&pageSize=30&sortBy=Savings",
-          { headers: { "User-Agent": UA, "Accept": "application/json" } });
+          { headers: { "User-Agent": UA, "Accept": "application/json" }, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
         if (!res.ok) return [];
         const data = await res.json();
         return Array.isArray(data) ? data : [];
@@ -274,7 +274,7 @@ export async function getGameLows(env, gameIDs) {
 async function fetchCheapSharkLow(gameID) {
   try {
     const res = await fetch("https://www.cheapshark.com/api/1.0/games?id=" + encodeURIComponent(gameID),
-      { headers: { "User-Agent": UA, "Accept": "application/json" } });
+      { headers: { "User-Agent": UA, "Accept": "application/json" }, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
     if (!res.ok) return null;
     const data = await res.json();
     const ce = data && data.cheapestPriceEver;
