@@ -1,10 +1,11 @@
 // Loot Radar caching: stay under HALF of the free-tier limits.
 // Published free-tier limits and our self-imposed targets (half):
-//   KV: 100k reads/day, 1k writes/day   -> target < 50k reads,  < 500 writes/day
+//   Workers: 100k requests/day       -> target < 50k requests/day
 //   D1: 5M rows read/day, 100k rows written/day -> target < 2.5M reads, < 50k writes/day
+//   (KV retired 2026-09-29: all state moved to the D1 kv_store table.)
 // Strategy: per-isolate in-memory cache absorbs repeat reads (sessions, pro
-// status, API keys, wishlist, upstream JSON); KV backs loot data so crons and
-// web isolates share one upstream fetch; D1 writes are claim/insert-only.
+// status, API keys, wishlist, game lows, upstream JSON); D1 backs loot data so
+// crons and web isolates share one upstream fetch; D1 writes are claim/insert-only.
 
 import { CACHE_TTL, UPSTREAM_TIMEOUT_MS } from "./config.js";
 

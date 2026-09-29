@@ -258,6 +258,11 @@ export async function getGameLows(env, gameIDs) {
   const lows = {};
   const ids = [...new Set((gameIDs || []).filter(Boolean))].map(String);
   if (!ids.length || !env || !env.DB) return lows;
+  // Mem-cache per isolate (10 min): this runs on every page view, and game_lows
+  // refresh on a 7-day staleness window, so 10 minutes of staleness is invisible.
+  const ck = "gamelows:" + ids.slice().sort().join(",");
+  const hit = memGet(ck);
+  if (hit) return hit;
   try {
     for (let i = 0; i < ids.length; i += 100) {
       const chunk = ids.slice(i, i + 100);
@@ -269,6 +274,7 @@ export async function getGameLows(env, gameIDs) {
       }
     }
   } catch (e) {}
+  memPut(ck, lows, 600);
   return lows;
 }
 
