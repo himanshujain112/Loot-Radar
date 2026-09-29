@@ -5,7 +5,7 @@ export const FREEBIES_URL = "https://www.gamerpower.com/api/giveaways?platform=p
 export const DEALS_URL = "https://www.cheapshark.com/api/1.0/deals?storeID=1&upperPrice=5&pageSize=60&sortBy=Savings";
 export const CS_BASE = "https://www.cheapshark.com/api/1.0";
 export const UA = "LootRadar/1.0 (https://radar.codemeoww.com; contact lootradar@codemeoww.com)";
-export const CACHE_TTL = 900; // 15 minutes
+export const CACHE_TTL = 3600; // 1 hour: listings don't need minute-fresh data
 
 // Upstream reads (CheapShark, GamerPower) must never hang a worker: no default
 // fetch timeout exists in Workers, and a tarpitting upstream would stall the
