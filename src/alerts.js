@@ -9,6 +9,7 @@ import {
 } from "./config.js";
 import { cleanTitle, esc } from "./util.js";
 import { memGet, memPut } from "./cache.js";
+import { kvGet, kvPut, pruneKvStore } from "./kvstore.js";
 import { storeUrl } from "./feeds.js";
 import { sendTelegram, sendEmail } from "./notify.js";
 import { sendDiscordDM, sendDiscordChannel, alertDigestDiscord, DISCORD_SERVER_ALERTS } from "./discord.js";
@@ -32,8 +33,8 @@ export async function alertStoreNames() {
 
 export async function fetchLootItems(env, storeIDs) {
   // storeIDs: which storefronts to pull deals from. Defaults to DEFAULT_DEAL_STORES.
-  // Memory (10 min) -> KV (20 min, shared across isolates/crons) -> upstream, keyed per store set.
-  // KV writes: 2 per refresh (~144/day), far under the 500/day target.
+  // Memory (10 min) -> D1 (20 min, shared across isolates/crons) -> upstream, keyed per store set.
+  // D1 writes: 2 per refresh (~144/day), trivial against the 100k/day free limit.
   const stores = (Array.isArray(storeIDs) && storeIDs.length ? storeIDs : DEFAULT_DEAL_STORES).filter(s => ACTIVE_ALERT_STORES.includes(s));
   // Cache version: bump when the cached item shape changes so a deploy
   // never reads stale-shaped rows written by older code.
@@ -41,10 +42,10 @@ export async function fetchLootItems(env, storeIDs) {
   const dealKey = CV + "deals:" + stores.slice().sort().join(",");
   const mFree = memGet(CV + "freebies"), mDeals = memGet(dealKey);
   if (mFree && mDeals) return { freebies: mFree, deals: mDeals };
-  if (env && env.KV) {
+  if (env && env.DB) {
     try {
-      const kvFree = await env.KV.get(CV + "freebies", "json");
-      const kvDeals = await env.KV.get(dealKey, "json");
+      const kvFree = await kvGet(env, CV + "freebies", "json");
+      const kvDeals = await kvGet(env, dealKey, "json");
       if (kvFree && kvDeals) {
         memPut(CV + "freebies", kvFree, 600);
         memPut(dealKey, kvDeals, 600);
@@ -110,10 +111,10 @@ export async function fetchLootItems(env, storeIDs) {
   // Write back to memory + KV so the next 20 minutes of crons/pages reuse it.
   memPut(CV + "freebies", freebies, 600);
   memPut(dealKey, deals, 600);
-  if (env && env.KV) {
+  if (env && env.DB) {
     try {
-      await env.KV.put(CV + "freebies", JSON.stringify(freebies), { expirationTtl: 1200 });
-      await env.KV.put(dealKey, JSON.stringify(deals), { expirationTtl: 1200 });
+      await kvPut(env, CV + "freebies", JSON.stringify(freebies), 1200);
+      await kvPut(env, dealKey, JSON.stringify(deals), 1200);
     } catch (e) {}
   }
   return { freebies: freebies, deals: deals };
@@ -345,7 +346,7 @@ export async function attachGameLows(env, deals) {
 }
 
 export async function pollAndAlert(env) {
-  if (!env || !env.KV || !env.DB) return;
+  if (!env || !env.DB) return;
   // Sent-ledger: atomic per-user dedup. Prune at 180 days, feeds turn over far
   // faster than that, so nothing can re-alert from a pruned row.
   try { await env.DB.prepare("DELETE FROM sent_alerts WHERE sent_at < datetime('now','-180 days')").run(); } catch (e) {}
@@ -570,7 +571,9 @@ export async function checkWishlistPrice(title) {
 }
 // One email per Pro user per day: wishlist prices + fresh freebies + top deals.
 export async function sendDailyDigest(env) {
-  if (!env || !env.DB || !env.KV) return;
+  if (!env || !env.DB) return;
+  // Daily sweep of expired kv_store rows (sessions, tokens, markers).
+  try { await pruneKvStore(env); } catch (e) {}
   const today = new Date().toISOString().slice(0, 10);
   let users = [];
   try {
@@ -585,7 +588,7 @@ export async function sendDailyDigest(env) {
     const email = u.email;
     if (!email) continue;
     try {
-      const done = await env.KV.get("dailydigest:" + today + ":" + email);
+      const done = await kvGet(env, "dailydigest:" + today + ":" + email);
       if (done) continue;
       let wl = [];
       try {
@@ -601,7 +604,7 @@ export async function sendDailyDigest(env) {
       const n = freebies.length + deals.length + hits.length;
       const sent = await sendEmail(env, email, "Today's loot: " + n + " finds on your radar", dailyDigestEmail(freebies, deals, hits));
       if (sent && sent.ok) {
-        await env.KV.put("dailydigest:" + today + ":" + email, "1", { expirationTtl: 172800 });
+        await kvPut(env, "dailydigest:" + today + ":" + email, "1", 172800);
       } else {
         // Don't mark as sent: a failed send leaves no key, so a later
         // run can still attempt delivery instead of silently skipping.

@@ -1,15 +1,16 @@
-// Loot Radar auth: magic-link sessions (KV), Pro status (D1, cached),
+// Loot Radar auth: magic-link sessions (D1 kv_store), Pro status (D1, cached),
 // wishlist reads, and Pro API key authentication + per-key rate limiting.
 
 import { getCookie, sha256hex } from "./util.js";
 import { memGet, memPut } from "./cache.js";
+import { kvGet } from "./kvstore.js";
 
 export async function sessionEmail(request, env) {
   const sid = getCookie(request, "lr_sess");
-  if (!sid || !env || !env.KV) return null;
+  if (!sid || !env || !env.DB) return null;
   const hit = memGet("sess:" + sid);
   if (hit !== null) return hit || null; // "" sentinel = no session (cached)
-  const s = await env.KV.get("sess:" + sid, "json");
+  const s = await kvGet(env, "sess:" + sid, "json");
   const email = (s && s.email) || null;
   memPut("sess:" + sid, email || "", 120);
   return email;

@@ -6,6 +6,8 @@ export const DISCORD_SERVER_ALERTS = false;
 // No gateway connection needed; the bot never has to stay online.
 // Users link from the dashboard (free or Pro); the worker DMs them like Telegram.
 
+import { kvGet, kvPut } from "./kvstore.js";
+
 const API = "https://discord.com/api/v10";
 const APP_URL = "https://radar.codemeoww.com";
 
@@ -90,7 +92,7 @@ export async function discordOpenDM(env, discordUserId) {
   if (!env || !env.DISCORD_BOT_TOKEN || !discordUserId) return null;
   const uid = String(discordUserId);
   try {
-    const cached = await env.KV.get("discord:dm:" + uid);
+    const cached = await kvGet(env, "discord:dm:" + uid);
     if (cached) return cached;
   } catch (e) {}
   try {
@@ -102,7 +104,7 @@ export async function discordOpenDM(env, discordUserId) {
     if (!res.ok) return null;
     const ch = await res.json();
     if (ch && ch.id) {
-      try { await env.KV.put("discord:dm:" + uid, ch.id, { expirationTtl: 86400 * 30 }); } catch (e) {}
+      try { await kvPut(env, "discord:dm:" + uid, ch.id, 86400 * 30); } catch (e) {}
       return ch.id;
     }
   } catch (e) {}

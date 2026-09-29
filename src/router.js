@@ -9,6 +9,7 @@ import {
   getFreebies, getDeals, csGet, normGameSearch,
 } from "./feeds.js";
 import { sessionEmail, proStatus, apiKeyAuth, rateOk } from "./auth.js";
+import { kvGet, kvPut, kvDelete } from "./kvstore.js";
 import { verifyDodoWebhook, dodoCustomerEmail } from "./payments.js";
 import { sendEmail, sendTelegram } from "./notify.js";
 import { setPrefs, handleTelegramCommand, pollAndAlert, sendDailyDigest, attachGameLows } from "./alerts.js";
@@ -295,13 +296,13 @@ export async function handleFetch(request, env, ctx) {
     // budget. The per-address 15-minute KV throttle below still caps email spend.
     const ip = request.headers.get("CF-Connecting-IP") || "unknown";
     if (!rateOk("magic:ip:" + ip, 10, 3600)) return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
-    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && env && env.KV) {
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && env && env.DB) {
       // One magic-link email per 15 minutes per address, a valid link is already in their inbox.
-      const recent = await env.KV.get("magicemail:" + email);
+      const recent = await kvGet(env, "magicemail:" + email);
       if (!recent) {
         const token = randHex(32);
-        await env.KV.put("magic:" + token, JSON.stringify({ email: email }), { expirationTtl: 900 });
-        await env.KV.put("magicemail:" + email, "1", { expirationTtl: 900 });
+        await kvPut(env, "magic:" + token, JSON.stringify({ email: email }), 900);
+        await kvPut(env, "magicemail:" + email, "1", 900);
         const link = "https://radar.codemeoww.com/api/auth/verify?token=" + token;
         ctx.waitUntil(sendEmail(env, email, "Your Loot Radar login link", magicLinkEmail(link)));
       }
@@ -310,17 +311,17 @@ export async function handleFetch(request, env, ctx) {
   }
   if (path === "/api/auth/verify") {
     const token = url.searchParams.get("token") || "";
-    const rec = (env && env.KV) ? await env.KV.get("magic:" + token, "json") : null;
+    const rec = (env && env.DB) ? await kvGet(env, "magic:" + token, "json") : null;
     if (!rec || !rec.email) {
       return finalize(pageHTML("Link expired: Loot Radar", "That login link is invalid or expired.", "/login", null, { noindex: true }) +
         '<div class="wrap" style="padding:80px 22px;text-align:center"><h1>Link expired</h1>' +
         '<p class="sec-sub" style="text-align:center">That login link is invalid or expired.</p>' +
         '<a class="btn" href="/login">Get a new link</a></div></body></html>', 400);
     }
-    await env.KV.delete("magic:" + token);
-    await env.KV.delete("magicemail:" + rec.email);
+    await kvDelete(env, "magic:" + token);
+    await kvDelete(env, "magicemail:" + rec.email);
     const sid = randHex(32);
-    await env.KV.put("sess:" + sid, JSON.stringify({ email: rec.email }), { expirationTtl: 2592000 });
+    await kvPut(env, "sess:" + sid, JSON.stringify({ email: rec.email }), 2592000);
     return new Response("", {
       status: 302,
       headers: {
@@ -338,7 +339,7 @@ export async function handleFetch(request, env, ctx) {
   }
   if (path === "/api/auth/logout" && request.method === "POST") {
     const sid = getCookie(request, "lr_sess");
-    if (sid && env && env.KV) { await env.KV.delete("sess:" + sid); memDel("sess:" + sid); }
+    if (sid && env && env.DB) { await kvDelete(env, "sess:" + sid); memDel("sess:" + sid); }
     return new Response(JSON.stringify({ ok: true }), {
       headers: { "Content-Type": "application/json", "Set-Cookie": "lr_sess=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0" },
     });
@@ -387,15 +388,15 @@ export async function handleFetch(request, env, ctx) {
       return new Response("Discord is not configured yet", { status: 503 });
     }
     const state = randHex(16);
-    try { await env.KV.put("discord:oauth:" + state, email, { expirationTtl: 600 }); } catch (e) {}
+    try { await kvPut(env, "discord:oauth:" + state, email, 600); } catch (e) {}
     return Response.redirect(discordAuthorizeUrl(env, state), 302);
   }
   if (path === "/api/discord/callback") {
     const code = url.searchParams.get("code") || "";
     const state = url.searchParams.get("state") || "";
     let email = null;
-    try { email = state ? await env.KV.get("discord:oauth:" + state) : null; } catch (e) {}
-    if (state) { try { await env.KV.delete("discord:oauth:" + state); } catch (e) {} }
+    try { email = state ? await kvGet(env, "discord:oauth:" + state) : null; } catch (e) {}
+    if (state) { try { await kvDelete(env, "discord:oauth:" + state); } catch (e) {} }
     const fail = () => Response.redirect("https://radar.codemeoww.com/dashboard?discord=error", 302);
     if (!email || !code) return fail();
     const tok = await discordExchangeCode(env, code);
@@ -428,7 +429,7 @@ export async function handleFetch(request, env, ctx) {
     if (env && env.DB) {
       try {
         const row = await env.DB.prepare("SELECT discord_user_id FROM customers WHERE email = ?").bind(email).first();
-        if (row && row.discord_user_id) { try { await env.KV.delete("discord:dm:" + row.discord_user_id); } catch (e) {} }
+        if (row && row.discord_user_id) { try { await kvDelete(env, "discord:dm:" + row.discord_user_id); } catch (e) {} }
         await env.DB.prepare("UPDATE customers SET discord_user_id = NULL, updated_at = ? WHERE email = ?").bind(new Date().toISOString(), email).run();
         memDel("pro:" + email);
       } catch (e) {}
@@ -494,9 +495,9 @@ export async function handleFetch(request, env, ctx) {
       } catch (e) {}
     }
     let tgUrl = null;
-    if (env && env.KV) {
+    if (env && env.DB) {
       const t = randHex(16);
-      await env.KV.put("tglink:" + t, JSON.stringify({ email: email }), { expirationTtl: 900 });
+      await kvPut(env, "tglink:" + t, JSON.stringify({ email: email }), 900);
       tgUrl = "https://t.me/games_loot_bot?start=" + t;
     }
     return finalize(pageHTML("Dashboard: Loot Radar", "Manage your Loot Radar alerts and Telegram/Discord connections.", "/dashboard", null, { noindex: true }) +
@@ -549,10 +550,10 @@ export async function handleFetch(request, env, ctx) {
     const text = (msg && msg.text) || "";
     const chatId = msg && msg.chat && msg.chat.id;
     const m = text.match(/^\/start\s+([0-9a-f]{32})/);
-    if (m && chatId && env && env.KV && env.DB) {
-      const rec = await env.KV.get("tglink:" + m[1], "json");
+    if (m && chatId && env && env.DB) {
+      const rec = await kvGet(env, "tglink:" + m[1], "json");
       if (rec && rec.email) {
-        await env.KV.delete("tglink:" + m[1]);
+        await kvDelete(env, "tglink:" + m[1]);
         const nowIso = new Date().toISOString();
         // One Telegram account belongs to one Loot Radar account, clear it elsewhere first.
         try {

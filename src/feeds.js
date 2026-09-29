@@ -4,6 +4,7 @@
 import { FREEBIES_URL, DEALS_URL, CS_BASE, UA } from "./config.js";
 import { fetchCached } from "./cache.js";
 import { cleanTitle, endsMs } from "./util.js";
+import { kvGet, kvPut } from "./kvstore.js";
 
 // Deal URLs go straight to the store, never expose the upstream redirect links.
 export function storeUrl(d, steamAppID) {
@@ -216,17 +217,17 @@ export async function getFreebies(ctx, env) {
   } catch (e) { items = []; }
   if (items.length) {
     try {
-      if (env && env.KV && Date.now() - lastSiteFreebiesSave > 600000) {
+      if (env && env.DB && Date.now() - lastSiteFreebiesSave > 600000) {
         lastSiteFreebiesSave = Date.now();
-        const save = env.KV.put(SITE_FREEBIES_KV, JSON.stringify(items), { expirationTtl: 86400 }).catch(() => {});
+        const save = kvPut(env, SITE_FREEBIES_KV, JSON.stringify(items), 86400).catch(() => {});
         if (ctx && ctx.waitUntil) ctx.waitUntil(save); else await save;
       }
     } catch (e) {}
     return items;
   }
   try {
-    if (env && env.KV) {
-      const stale = await env.KV.get(SITE_FREEBIES_KV, "json");
+    if (env && env.DB) {
+      const stale = await kvGet(env, SITE_FREEBIES_KV, "json");
       if (Array.isArray(stale) && stale.length) return stale;
     }
   } catch (e) {}
@@ -235,9 +236,9 @@ export async function getFreebies(ctx, env) {
 
 // Stale fallback for the site deals pool: CheapShark intermittently fails for
 // worker egress (rate limits / challenges come in waves), which used to render
-// an empty deals page. Now the last good pool is kept in KV (24h) and served
+// an empty deals page. Now the last good pool is kept in D1 (24h) and served
 // when a fresh fetch comes back empty. Writes are throttled per isolate
-// (~10 min) to stay far under the KV write budget.
+// (~10 min) to stay cheap.
 // Same stale-fallback pattern as the deals pool: serve last good freebies
 // from KV (24h) when GamerPower fails, so the homepage and /freebies never
 // render empty on an upstream blip.
@@ -276,17 +277,17 @@ export async function getDeals(ctx, env) {
   const pool = await freshDealsPool(ctx);
   if (pool.length) {
     try {
-      if (env && env.KV && Date.now() - lastSiteDealsSave > 600000) {
+      if (env && env.DB && Date.now() - lastSiteDealsSave > 600000) {
         lastSiteDealsSave = Date.now();
-        const save = env.KV.put(SITE_DEALS_KV, JSON.stringify(pool), { expirationTtl: 86400 }).catch(() => {});
+        const save = kvPut(env, SITE_DEALS_KV, JSON.stringify(pool), 86400).catch(() => {});
         if (ctx && ctx.waitUntil) ctx.waitUntil(save); else await save;
       }
     } catch (e) {}
     return pool;
   }
   try {
-    if (env && env.KV) {
-      const stale = await env.KV.get(SITE_DEALS_KV, "json");
+    if (env && env.DB) {
+      const stale = await kvGet(env, SITE_DEALS_KV, "json");
       if (Array.isArray(stale) && stale.length) return stale;
     }
   } catch (e) {}
