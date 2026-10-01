@@ -403,8 +403,10 @@ export async function pollAndAlert(env) {
         if (await claimItem(env, chatId, it)) fresh.push(it);
       }
       if (fresh.length) {
-        const ok = await sendTelegram(env, chatId, alertDigestCaption(fresh), alertButtons(fresh));
-        if (!ok) for (const it of fresh) await releaseClaim(env, chatId, it);
+        const tg = await sendTelegram(env, chatId, alertDigestCaption(fresh), alertButtons(fresh));
+        // sendTelegram returns {ok:bool} (object, always truthy): check the flag,
+        // not the object, or failed sends would never release their claims.
+        if (!tg || !tg.ok) for (const it of fresh) await releaseClaim(env, chatId, it);
       }
     }
     if (dcId && env.DISCORD_BOT_TOKEN) {
