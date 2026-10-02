@@ -466,10 +466,7 @@ export async function sendFreeDailySummary(env, loot) {
         const r = await env.DB.prepare("INSERT OR IGNORE INTO free_daily_sent (email, channel, day, sent_at) VALUES (?,?,?,?)")
           .bind(email, "telegram", day, nowIso).run();
         if (r && r.meta && r.meta.changes > 0) {
-          const tg = await sendTelegram(env, String(u.telegram_chat_id), alertDigestCaption(items, tgHeader), alertButtons(items));
-          // Failed send: release the day marker so the next poll retries, instead of
-          // silently skipping this user's free daily summary (same claim-release rule as Pro alerts).
-          if (!tg || !tg.ok) await env.DB.prepare("DELETE FROM free_daily_sent WHERE email = ? AND channel = 'telegram' AND day = ?").bind(email, day).run();
+          await sendTelegram(env, String(u.telegram_chat_id), alertDigestCaption(items, tgHeader), alertButtons(items));
         }
       } catch (e) {}
     }
@@ -478,10 +475,7 @@ export async function sendFreeDailySummary(env, loot) {
         const r = await env.DB.prepare("INSERT OR IGNORE INTO free_daily_sent (email, channel, day, sent_at) VALUES (?,?,?,?)")
           .bind(email, "discord", day, nowIso).run();
         if (r && r.meta && r.meta.changes > 0) {
-          const dcOk = await sendDiscordDM(env, String(u.discord_user_id), alertDigestDiscord(items, dcHeader));
-          // Failed send: release the day marker so the next poll retries, instead of
-          // silently skipping this user's free daily summary.
-          if (!dcOk) await env.DB.prepare("DELETE FROM free_daily_sent WHERE email = ? AND channel = 'discord' AND day = ?").bind(email, day).run();
+          await sendDiscordDM(env, String(u.discord_user_id), alertDigestDiscord(items, dcHeader));
         }
       } catch (e) {}
     }
