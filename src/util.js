@@ -38,6 +38,11 @@ export function endsMs(f) {
   const t = Date.parse(String(f.ends).replace(" ", "T") + "Z");
   return isNaN(t) ? 0 : t;
 }
+export function isExpiredFreebie(f) {
+  // GamerPower keeps "Active" items with past end dates; don't surface them.
+  const t = endsMs(f);
+  return t > 0 && t <= Date.now();
+}
 export function endsLabel(ms) {
   // Server-rendered initial countdown text; the tick script takes over in-browser.
   const d = ms - Date.now();

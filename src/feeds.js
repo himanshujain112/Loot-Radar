@@ -3,7 +3,7 @@
 
 import { FREEBIES_URL, DEALS_URL, CS_BASE, UA } from "./config.js";
 import { fetchCached } from "./cache.js";
-import { cleanTitle, endsMs } from "./util.js";
+import { cleanTitle, endsMs, isExpiredFreebie } from "./util.js";
 import { kvGet, kvPut } from "./kvstore.js";
 
 // Deal URLs go straight to the store, never expose the upstream redirect links.
@@ -213,7 +213,8 @@ export async function getFreebies(ctx, env) {
       platforms: g.platforms || "PC",
       ends: g.end_date && g.end_date !== "N/A" ? g.end_date : null,
       published: g.date_published && g.date_published !== "N/A" ? g.date_published : null,
-    })).sort((a, b) => (endsMs(a) || Infinity) - (endsMs(b) || Infinity)); // soonest-expiring first
+    })).filter(g => !isExpiredFreebie(g)) // GamerPower leaves past-end-date items "Active"; hide them
+      .sort((a, b) => (endsMs(a) || Infinity) - (endsMs(b) || Infinity)); // soonest-expiring first
   } catch (e) { items = []; }
   if (items.length) {
     try {
@@ -228,7 +229,7 @@ export async function getFreebies(ctx, env) {
   try {
     if (env && env.DB) {
       const stale = await kvGet(env, SITE_FREEBIES_KV, "json");
-      if (Array.isArray(stale) && stale.length) return stale;
+      if (Array.isArray(stale) && stale.length) return stale.filter(g => !isExpiredFreebie(g));
     }
   } catch (e) {}
   return [];

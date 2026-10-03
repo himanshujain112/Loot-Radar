@@ -7,7 +7,7 @@ import {
   UA, FREEBIES_URL, ACTIVE_ALERT_STORES, DEFAULT_DEAL_STORES,
   STORE_ALIASES, STORE_NAMES, STORE_PICK_ORDER, UPSTREAM_TIMEOUT_MS,
 } from "./config.js";
-import { cleanTitle, esc } from "./util.js";
+import { cleanTitle, esc, isExpiredFreebie } from "./util.js";
 import { memGet, memPut } from "./cache.js";
 import { kvGet, kvPut, pruneKvStore } from "./kvstore.js";
 import { storeUrl } from "./feeds.js";
@@ -67,7 +67,7 @@ export async function fetchLootItems(env, storeIDs) {
         worth: g.worth && g.worth !== "N/A" ? g.worth : "",
         platforms: g.platforms || "",
         ends: g.end_date && g.end_date !== "N/A" ? g.end_date : "",
-      })).filter(g => g.key !== "free:");
+      })).filter(g => g.key !== "free:" && !isExpiredFreebie(g)); // skip already-expired giveaways
     }
   } catch (e) {}
   // Alert deals: the requested stores, one fetch each, merged and
