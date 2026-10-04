@@ -54,6 +54,7 @@ export async function fetchLootItems(env, storeIDs) {
     } catch (e) {}
   }
   let freebies = [];
+  let freebiesOk = false;
   try {
     const res = await fetch(FREEBIES_URL, { headers: { "User-Agent": UA, "Accept": "application/json" }, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
     if (res.ok) {
@@ -68,25 +69,32 @@ export async function fetchLootItems(env, storeIDs) {
         platforms: g.platforms || "",
         ends: g.end_date && g.end_date !== "N/A" ? g.end_date : "",
       })).filter(g => g.key !== "free:" && !isExpiredFreebie(g)); // skip already-expired giveaways
+      freebiesOk = true;
     }
   } catch (e) {}
   // Alert deals: the requested stores, one fetch each, merged and
   // deduped by deal ID, 50%+ only (users filter further by their own threshold),
   // sorted by biggest discount.
   let deals = [];
+  let dealsOk = false;
   try {
     const names = await alertStoreNames();
     const lists = await Promise.all(stores.map(async (storeID) => {
       try {
         const res = await fetch("https://www.cheapshark.com/api/1.0/deals?storeID=" + storeID + "&upperPrice=5&pageSize=30&sortBy=Savings",
           { headers: { "User-Agent": UA, "Accept": "application/json" }, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
-        if (!res.ok) return [];
+        if (!res.ok) return null;
         const data = await res.json();
         return Array.isArray(data) ? data : [];
-      } catch (e) { return []; }
+      } catch (e) { return null; }
     }));
-    const seen = {};
-    for (const d of lists.flat()) {
+    if (!lists.every(l => l !== null)) {
+      // Partial upstream failure: keep the last good pool (written by an
+      // earlier successful run) instead of caching a partial/empty one.
+    } else {
+      dealsOk = true;
+      const seen = {};
+      for (const d of lists.flat()) {
       const id = d.dealID || "";
       if (!id || seen[id]) continue;
       seen[id] = 1;
@@ -107,15 +115,23 @@ export async function fetchLootItems(env, storeIDs) {
       });
     }
     deals.sort((a, b) => b.savings - a.savings);
+    }
   } catch (e) {}
-  // Write back to memory + KV so the next 20 minutes of crons/pages reuse it.
-  memPut(CV + "freebies", freebies, 600);
-  memPut(dealKey, deals, 600);
-  if (env && env.DB) {
-    try {
-      await kvPut(env, CV + "freebies", JSON.stringify(freebies), 1200);
-      await kvPut(env, dealKey, JSON.stringify(deals), 1200);
-    } catch (e) {}
+  // Write back to memory + KV so the next 20 minutes of crons/pages reuse
+  // it. Only the parts that fetched cleanly: a failed upstream run must not
+  // wipe the shared cache with an empty list (one flaked fetch used to turn
+  // into a cache-poisoned outage until the TTL expired).
+  if (freebiesOk) {
+    memPut(CV + "freebies", freebies, 600);
+    if (env && env.DB) {
+      try { await kvPut(env, CV + "freebies", JSON.stringify(freebies), 1200); } catch (e) {}
+    }
+  }
+  if (dealsOk) {
+    memPut(dealKey, deals, 600);
+    if (env && env.DB) {
+      try { await kvPut(env, dealKey, JSON.stringify(deals), 1200); } catch (e) {}
+    }
   }
   return { freebies: freebies, deals: deals };
 }
