@@ -212,7 +212,7 @@ export async function getFreebies(ctx, env) {
       desc: (g.description || "").slice(0, 140),
       platforms: g.platforms || "PC",
       ends: g.end_date && g.end_date !== "N/A" ? g.end_date : null,
-      published: g.date_published && g.date_published !== "N/A" ? g.date_published : null,
+      published: g.published_date && g.published_date !== "N/A" ? g.published_date : null,
     })).filter(g => !isExpiredFreebie(g)) // GamerPower leaves past-end-date items "Active"; hide them
       .sort((a, b) => (endsMs(a) || Infinity) - (endsMs(b) || Infinity)); // soonest-expiring first
   } catch (e) { items = []; }
