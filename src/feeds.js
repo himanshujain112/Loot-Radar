@@ -3,7 +3,7 @@
 
 import { FREEBIES_URL, DEALS_URL, CS_BASE, UA } from "./config.js";
 import { fetchCached } from "./cache.js";
-import { cleanTitle, endsMs, isExpiredFreebie } from "./util.js";
+import { cleanTitle, endsMs, isExpiredFreebie, giveawayPubDate } from "./util.js";
 import { kvGet, kvPut } from "./kvstore.js";
 
 // Deal URLs go straight to the store, never expose the upstream redirect links.
@@ -204,7 +204,11 @@ export async function getFreebies(ctx, env) {
   try {
     const res = await fetchCached(ctx, FREEBIES_URL, { "User-Agent": UA, "Accept": "application/json" });
     const data = await res.json();
-    items = (Array.isArray(data) ? data : []).slice(0, 40).map(g => ({
+    // Newest first: the API's row order is unstable, so sort before slicing
+    // or fresh drops get randomly replaced by old leftovers in the pool.
+    const rows = (Array.isArray(data) ? data : [])
+      .sort((a, b) => giveawayPubDate(b).localeCompare(giveawayPubDate(a)));
+    items = rows.slice(0, 40).map(g => ({
       title: cleanTitle(g.title),
       worth: g.worth || "Free",
       thumb: g.thumbnail || g.image || "",

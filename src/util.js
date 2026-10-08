@@ -32,8 +32,15 @@ export function cleanTitle(t) {
     .replace(/\s*\((epic games|steam|gog|ubisoft connect|ubisoft|itch\.io|indiegala|stove|fanatical|humble bundle|humble)\)\s*$/i, "").trim() || "Untitled";
 }
 
-export function endsMs(f) {
-  // GamerPower end_date looks like "2026-09-29 23:59:00" (UTC). 0 = unknown.
+// GamerPower published_date looks like "2026-10-08 11:12:47" (UTC) and
+// sorts lexicographically = chronologically. Missing/"N/A" sorts last so
+// bad rows never float above real drops. The API's own row order is NOT
+// stable (it varies run to run), so callers must sort before slicing.
+export function giveawayPubDate(g) {
+  const p = String((g && g.published_date) || "");
+  return (p && p !== "N/A") ? p : "";
+}
+export function endsMs(f) {  // GamerPower end_date looks like "2026-09-29 23:59:00" (UTC). 0 = unknown.
   if (!f || !f.ends) return 0;
   const t = Date.parse(String(f.ends).replace(" ", "T") + "Z");
   return isNaN(t) ? 0 : t;

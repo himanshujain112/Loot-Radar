@@ -7,7 +7,7 @@ import {
   UA, FREEBIES_URL, ACTIVE_ALERT_STORES, DEFAULT_DEAL_STORES,
   STORE_ALIASES, STORE_NAMES, STORE_PICK_ORDER, UPSTREAM_TIMEOUT_MS,
 } from "./config.js";
-import { cleanTitle, esc, isExpiredFreebie } from "./util.js";
+import { cleanTitle, esc, isExpiredFreebie, giveawayPubDate } from "./util.js";
 import { memGet, memPut } from "./cache.js";
 import { kvGet, kvPut, pruneKvStore } from "./kvstore.js";
 import { storeUrl } from "./feeds.js";
@@ -59,7 +59,11 @@ export async function fetchLootItems(env, storeIDs) {
     const res = await fetch(FREEBIES_URL, { headers: { "User-Agent": UA, "Accept": "application/json" }, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
     if (res.ok) {
       const data = await res.json();
-      freebies = (Array.isArray(data) ? data : []).slice(0, 12).map(g => ({
+      // Newest first: the API's row order is unstable, so sort before slicing
+      // or fresh drops get randomly replaced by old leftovers in the pool.
+      const rows = (Array.isArray(data) ? data : [])
+        .sort((a, b) => giveawayPubDate(b).localeCompare(giveawayPubDate(a)));
+      freebies = rows.slice(0, 12).map(g => ({
         kind: "free",
         key: "free:" + String(g.title || "").toLowerCase().trim(),
         title: cleanTitle(g.title),
