@@ -7,7 +7,7 @@ import {
   UA, FREEBIES_URL, ACTIVE_ALERT_STORES, DEFAULT_DEAL_STORES,
   STORE_ALIASES, STORE_NAMES, STORE_PICK_ORDER, UPSTREAM_TIMEOUT_MS,
 } from "./config.js";
-import { cleanTitle, esc, isExpiredFreebie, giveawayPubDate } from "./util.js";
+import { cleanTitle, esc, isExpiredFreebie, giveawayPubDate, isGameFreebie } from "./util.js";
 import { memGet, memPut } from "./cache.js";
 import { kvGet, kvPut, pruneKvStore } from "./kvstore.js";
 import { storeUrl } from "./feeds.js";
@@ -61,7 +61,9 @@ export async function fetchLootItems(env, storeIDs) {
       const data = await res.json();
       // Newest first: the API's row order is unstable, so sort before slicing
       // or fresh drops get randomly replaced by old leftovers in the pool.
+      // isGameFreebie drops the DLC noise the unfiltered feed carries.
       const rows = (Array.isArray(data) ? data : [])
+        .filter(isGameFreebie)
         .sort((a, b) => giveawayPubDate(b).localeCompare(giveawayPubDate(a)));
       freebies = rows.slice(0, 12).map(g => ({
         kind: "free",

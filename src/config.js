@@ -1,7 +1,10 @@
 // Loot Radar shared constants.
 // Feed URLs, user agent, cache TTLs, brand assets, store directory constants.
 
-export const FREEBIES_URL = "https://www.gamerpower.com/api/giveaways?platform=pc&type=game&sort-by=date";
+export const FREEBIES_URL = "https://www.gamerpower.com/api/giveaways?platform=pc&sort-by=date";
+// The URL intentionally omits type=game: we filter client-side with
+// isGameFreebie() below instead, so "Early Access" playtests (real games)
+// are included while DLC packs stay out.
 export const DEALS_URL = "https://www.cheapshark.com/api/1.0/deals?storeID=1&upperPrice=5&pageSize=60&sortBy=Savings";
 export const CS_BASE = "https://www.cheapshark.com/api/1.0";
 export const UA = "LootRadar/1.0 (https://radar.codemeoww.com; contact lootradar@codemeoww.com)";

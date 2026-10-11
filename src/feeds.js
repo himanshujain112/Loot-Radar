@@ -3,7 +3,7 @@
 
 import { FREEBIES_URL, DEALS_URL, CS_BASE, UA } from "./config.js";
 import { fetchCached } from "./cache.js";
-import { cleanTitle, endsMs, isExpiredFreebie, giveawayPubDate } from "./util.js";
+import { cleanTitle, endsMs, isExpiredFreebie, giveawayPubDate, isGameFreebie } from "./util.js";
 import { kvGet, kvPut } from "./kvstore.js";
 
 // Deal URLs go straight to the store, never expose the upstream redirect links.
@@ -206,7 +206,9 @@ export async function getFreebies(ctx, env) {
     const data = await res.json();
     // Newest first: the API's row order is unstable, so sort before slicing
     // or fresh drops get randomly replaced by old leftovers in the pool.
+    // isGameFreebie drops the DLC noise the unfiltered feed carries.
     const rows = (Array.isArray(data) ? data : [])
+      .filter(isGameFreebie)
       .sort((a, b) => giveawayPubDate(b).localeCompare(giveawayPubDate(a)));
     items = rows.slice(0, 40).map(g => ({
       title: cleanTitle(g.title),

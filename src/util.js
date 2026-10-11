@@ -40,6 +40,13 @@ export function giveawayPubDate(g) {
   const p = String((g && g.published_date) || "");
   return (p && p !== "N/A") ? p : "";
 }
+// Keep real games only: GamerPower "Game" + "Early Access" (playtests are
+// playable games). Exclude "DLC" (80+ packs for games you may not own) and
+// "Other". Done client-side because the API's type= param can't combine.
+export function isGameFreebie(g) {
+  const t = String((g && g.type) || "").toLowerCase().trim();
+  return t === "game" || t === "early access";
+}
 export function endsMs(f) {  // GamerPower end_date looks like "2026-09-29 23:59:00" (UTC). 0 = unknown.
   if (!f || !f.ends) return 0;
   const t = Date.parse(String(f.ends).replace(" ", "T") + "Z");
