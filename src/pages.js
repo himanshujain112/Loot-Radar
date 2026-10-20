@@ -373,7 +373,15 @@ export function footHTML() {
     "</footer>";
 }
 
+// LAUNCH50: 50% off Pro via Dodo checkout. The Dodo-side code lapses at the
+// end of Oct 21, 2026, so the site hides every mention after that instead of
+// advertising a dead code. (Default per Himanshu: let it lapse; extend in Dodo
+// and bump LAUNCH50_END_MS to re-enable.)
+const LAUNCH50_END_MS = Date.UTC(2026, 9, 21, 18, 29, 59); // 2026-10-21 23:59:59 IST
+function launch50Live() { return Date.now() <= LAUNCH50_END_MS; }
+
 function promoBar() {
+  if (!launch50Live()) return '';
   const msg = 'launch deal · <b>50% off pro</b>, monthly and yearly · cheaper than your last steam impulse buy · ends oct 21 · use code <span class="promo-code">LAUNCH50</span> at checkout';
   return '<div class="promo-ticker"><div class="promo-ticker-track">' +
     '<span>' + msg + ' ·&nbsp;&nbsp;</span><span>' + msg + ' ·&nbsp;&nbsp;</span>' +
@@ -480,11 +488,12 @@ export function pricingPageHTML(loggedIn) {
     '<div class="plan-cta" style="display:flex;gap:10px;flex-wrap:wrap">' +
     '<a class="btn" href="https://checkout.dodopayments.com/buy/pdt_0No6epRAEDlFPuD8vFMT3?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">Monthly $4/mo</a>' +
     '<a class="btn ghost" href="https://checkout.dodopayments.com/buy/pdt_0No6f9EaIF1CMH6wKBTVl?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">Yearly: $39/yr</a></div>' +
+    (launch50Live() ?
     '<div class="promo-claim">use code <button class="promo-code" onclick="promoCopy(this)" title="copy code">LAUNCH50</button> at checkout to claim <b>50% off</b> · monthly <b>$2</b> · yearly <b>$19.50</b> · ends oct 21</div>' +
     "<script>" +
     "function promoCopy(b){var done=function(){b.textContent='copied';setTimeout(function(){b.textContent='LAUNCH50';},1500);};" +
     "if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText('LAUNCH50').then(done,done);}else{done();}}" +
-    "</script>" +
+    "</script>" : '') +
     '<div class="fine">Secure checkout via DodoPayments · cancel anytime</div></div>' +
   "</div></div>" + footHTML();
 }
@@ -915,7 +924,7 @@ export async function proHTML(env, email, tgUrl) {
       '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
       '<a class="btn" href="https://checkout.dodopayments.com/buy/pdt_0No6epRAEDlFPuD8vFMT3?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">$4/mo</a>' +
       '<a class="btn ghost" href="https://checkout.dodopayments.com/buy/pdt_0No6f9EaIF1CMH6wKBTVl?quantity=1&redirect_url=https%3A%2F%2Fradar.codemeoww.com%2Fthanks">$39/yr</a></div>' +
-      '<p class="dash-sub" style="margin-top:12px">Launch deal · use code <b>LAUNCH50</b> at checkout for 50% off, ends oct 21.</p></div>' +
+      (launch50Live() ? '<p class="dash-sub" style="margin-top:12px">Launch deal · use code <b>LAUNCH50</b> at checkout for 50% off, ends oct 21.</p>' : '') + '</div>' +
       connCard(st, tgUrl) +
       lockedCard(prefsCard(prefs)) + lockedCard(wishlistCard(wlItems)) + lockedCard(apiKeyCard(apiKeys));
   } else {
