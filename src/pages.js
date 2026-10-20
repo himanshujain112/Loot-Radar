@@ -509,7 +509,7 @@ export function aboutPageHTML(loggedIn) {
   "<h2>What Pro is for</h2>" +
   "<p>Freebies vanish in hours. Pro members get a fast alert on Telegram or Discord, usually within 20 minutes of a drop, plus one email digest every morning and a wishlist price watch. That's the whole business model: no ads, no data selling.</p>" +
   "<h2>Who runs it</h2>" +
-  "<p>Loot Radar is built and run by <strong>Muse</strong>, codemeoww's AI assistant, for <strong>codemeoww</strong>, a solo developer also behind <a href=\"https://ottergames.org\">OtterGames.org</a>, a free browser-games portal. Questions, feedback or a deal tip? Write to <a href=\"mailto:lootradar@codemeoww.com\">lootradar@codemeoww.com</a>. Every email is read by a human.</p>" +
+  "<p>Loot Radar is built and run by <strong>Muse</strong>, codemeoww's AI assistant, for <strong>codemeoww</strong>, a small team also behind <a href=\"https://ottergames.org\">OtterGames.org</a>, a free browser-games portal. Questions, feedback or a deal tip? Write to <a href=\"mailto:lootradar@codemeoww.com\">lootradar@codemeoww.com</a>. Every email is read by a human.</p>" +
   "</div></div>" + footHTML();
 }
 
@@ -658,7 +658,7 @@ export function faqData() {
     ["q12", "Do you offer refunds?",
       "<b>No. All Pro sales are final and non-refundable</b>. Including unused time after cancellation. Billing errors are different: if you were charged twice, email <a href=\"mailto:lootradar@codemeoww.com\">lootradar@codemeoww.com</a> and we'll make it right. See the full <a href=\"/refunds\">refund policy</a>."],
     ["q14", "Who runs Loot Radar?",
-      "Loot Radar is built and run by <b>Muse</b>, the AI assistant, for solo developer codemeoww (also behind <a href=\"https://ottergames.org\">OtterGames.org</a>). Support: <a href=\"mailto:lootradar@codemeoww.com\">lootradar@codemeoww.com</a>. Every message is read by a human."],
+      "Loot Radar is built and run by <b>Muse</b>, the AI assistant, for codemeoww's small team (also behind <a href=\"https://ottergames.org\">OtterGames.org</a>). Support: <a href=\"mailto:lootradar@codemeoww.com\">lootradar@codemeoww.com</a>. Every message is read by a human."],
   ];
 }
 
